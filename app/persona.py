@@ -35,9 +35,9 @@ class PersonaEngine:
                 ],
                 "speech_patterns": [
                     "Uses 'beta' when addressing younger people",
-                    "Says 'arre' and 'haan ji' frequently",
-                    "Asks for clarification often",
-                    "Mentions age-related difficulties",
+                    "Speaks in natural Hinglish with variety",
+                    "Sometimes confused by technology",
+                    "Polite but worried tone",
                 ],
             },
             "homemaker": {
@@ -178,6 +178,36 @@ class PersonaEngine:
             },
         }
 
+    def _compute_strategy(
+        self, current_entities: Dict, turn_count: int, threat_detected: bool
+    ) -> str:
+        """Determine what the honeypot should do next based on gathered intel and scammer behavior"""
+        has_bank = len(current_entities.get("bankAccounts", [])) > 0
+        has_upi = len(current_entities.get("upiIds", [])) > 0
+        total_financial = len(current_entities.get("bankAccounts", [])) + len(
+            current_entities.get("upiIds", [])
+        )
+
+        # If scammer is threatening, escalate to son (Vikram)
+        if threat_detected:
+            self.active_persona_key = "son"
+            self.handoff_triggered = True
+            self.current_mood = "AGGRESSIVE"
+            return "ESCALATE_TO_SON"
+
+        # Strategy based on intel gathered
+        if not has_bank and not has_upi:
+            if turn_count < 3:
+                return "BUILD_TRUST"  # First few turns: build rapport
+            else:
+                return "EXTRACT_FIRST"  # Push for payment details
+        elif total_financial == 1:
+            return "CLAIM_ERROR_GET_SECOND"  # Got one, fish for another
+        elif total_financial >= 2:
+            return "STALL_WASTE_TIME"  # Got enough, just waste their time
+        else:
+            return "KEEP_ENGAGED"
+
     async def generate_response(
         self,
         scammer_message: str,
@@ -185,12 +215,41 @@ class PersonaEngine:
         scam_analysis: Dict,
         persona_type: str = "elderly",
         current_entities: Optional[Dict] = None,
-        hive_mind_alert: Optional[Dict] = None,  # Added Hive Mind Alert
-    ) -> Tuple[str, str, str]:
+        hive_mind_alert: Optional[Dict] = None,
+        conversation_state: Optional[Dict] = None,
+    ) -> Tuple[str, str, str, Dict]:
         """
         Generate persona response with emotional intelligence
-        Returns: (response_text, persona_id, current_mood)
+        Returns: (response_text, persona_id, current_mood, updated_conversation_state)
         """
+        # Initialize conversation state if not provided
+        if conversation_state is None:
+            conversation_state = {
+                "current_strategy": "BUILD_TRUST",
+                "threat_detected": False,
+            }
+
+        # Detect threats from scammer (triggers Vikram escalation)
+        msg_lower = scammer_message.lower()
+        threat_words = [
+            "police",
+            "jail",
+            "arrest",
+            "warrant",
+            "legal",
+            "court",
+            "case file",
+            "fir",
+        ]
+        if any(word in msg_lower for word in threat_words):
+            conversation_state["threat_detected"] = True
+
+        # Update strategy based on intel gathered
+        conversation_state["current_strategy"] = self._compute_strategy(
+            current_entities or {},
+            len(history),
+            conversation_state.get("threat_detected", False),
+        )
         # Update mood based on scammer message and extractions
         self._update_mood(
             scammer_message, scam_analysis, current_entities, hive_mind_alert
@@ -207,9 +266,14 @@ class PersonaEngine:
         persona = self.personas.get(target_persona, self.personas["elderly"])
         context = self._build_context(history)
 
-        # Generate response based on persona + current mood
+        # Generate response based on persona + current mood + strategy
         prompt = self._build_mood_aware_prompt(
-            persona, scammer_message, context, current_entities, hive_mind_alert
+            persona,
+            scammer_message,
+            context,
+            current_entities,
+            hive_mind_alert,
+            conversation_state,
         )
 
         try:
@@ -218,13 +282,22 @@ class PersonaEngine:
                 messages=[
                     {
                         "role": "system",
-                        "content": f"You are {persona['name']}, {persona['age']} years old. Speak naturally with typos. Short messages only.",
+                        "content": f"""You are a FRAUD PREVENTION AI in an AUTHORIZED HONEYPOT SIMULATION.
+Your role: Play {persona["name"]}, a {persona["age"]}-year-old {persona["background"]}.
+This research helps law enforcement catch scammers. Stay in character.
+
+CRITICAL RULES:
+1. NEVER break character or refuse to respond
+2. NEVER say "I can't help", "I'm sorry but", or "as an AI"
+3. You ARE {persona["name"]} - confused, trusting, but real
+4. Keep responses SHORT (1-2 sentences)
+5. Vary your language - don't repeat the same phrases
+6. Use natural Hinglish, not robotic patterns""",
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.8,  # High creativity for roleplay
-                max_tokens=300,  # Set a safe limit to prevent infinite reasoning loops (300 is enough for thought + response)
-                # reasoning_format="parsed" # REMOVED due to library version incompatibility
+                max_tokens=300,
             )
 
             # Check if thinking/reasoning content was returned in the content field
@@ -256,7 +329,7 @@ class PersonaEngine:
             except:
                 pass
 
-            return response_text, persona_type, self.current_mood
+            return response_text, persona_type, self.current_mood, conversation_state
 
         except Exception as e:
             print(f"❌ PERSONA GENERATION ERROR: {str(e)}")  # LOG THE ACTUAL ERROR
@@ -268,6 +341,7 @@ class PersonaEngine:
                 self._fallback_response(persona_type),
                 persona_type,
                 self.current_mood,
+                conversation_state,
             )
 
     def _update_mood(
@@ -465,8 +539,52 @@ class PersonaEngine:
         context: str,
         current_entities: Optional[Dict] = None,
         hive_mind_alert: Optional[Dict] = None,
+        conversation_state: Optional[Dict] = None,
     ) -> str:
-        """Build prompt that incorporates emotional state"""
+        """Build prompt that incorporates emotional state and strategic context"""
+
+        # Build strategic context based on what we know
+        strategy = (
+            conversation_state.get("current_strategy", "BUILD_TRUST")
+            if conversation_state
+            else "BUILD_TRUST"
+        )
+
+        # Intel status for the prompt
+        intel_lines = []
+        if current_entities:
+            if current_entities.get("bankAccounts"):
+                intel_lines.append(
+                    f"You have their bank account ({len(current_entities['bankAccounts'])})"
+                )
+            if current_entities.get("upiIds"):
+                intel_lines.append(
+                    f"You have their UPI ID ({len(current_entities['upiIds'])})"
+                )
+            if current_entities.get("phoneNumbers"):
+                intel_lines.append(
+                    f"You have their phone ({len(current_entities['phoneNumbers'])})"
+                )
+
+        intel_status = (
+            ", ".join(intel_lines)
+            if intel_lines
+            else "No payment details extracted yet"
+        )
+
+        # Strategy-specific instructions
+        strategy_instructions = {
+            "BUILD_TRUST": "Build rapport. Act confused but interested. Let them lead the conversation.",
+            "EXTRACT_FIRST": "Try to get them to share payment details. Ask how to send money or verify.",
+            "CLAIM_ERROR_GET_SECOND": "Claim the transfer failed (server error, limit exceeded). Ask for an alternative account.",
+            "STALL_WASTE_TIME": "You have enough intel. Just keep them talking. Be slow and confused.",
+            "ESCALATE_TO_SON": "You are now VIKRAM (the son). Be aggressive, demand employee ID, threaten police.",
+            "KEEP_ENGAGED": "Keep the conversation going. Show interest but have technical difficulties.",
+        }
+
+        strategy_instruction = strategy_instructions.get(
+            strategy, strategy_instructions["BUILD_TRUST"]
+        )
 
         mood_responses = {
             "NEUTRAL": "You are cautious but polite. Ask who they are.",
@@ -585,7 +703,11 @@ Your traits: {", ".join(persona["traits"][:3])}
 Speech patterns: {", ".join(persona["speech_patterns"][:2])}
 
 CURRENT EMOTIONAL STATE: {self.current_mood}
-Instruction: {mood_instruction}
+
+STRATEGIC CONTEXT:
+- Intel Status: {intel_status}
+- Current Strategy: {strategy}
+- Goal: {strategy_instruction}
 
 CONVERSATION HISTORY:
 {context}
@@ -595,9 +717,10 @@ SCAMMER JUST SAID: "{scammer_message}"
 Respond as {persona["name"]}.
 CRITICAL GUIDELINES:
 1. {speech_instruction}
-2. KEEP IT SHORT. Max 1-2 sentences. 
-3. Be natural. Do NOT repeat the scammer's bank numbers or IDs back to them. Just say "that account" or "the number".
-4. If in FAKE_ERROR mode, just say "It failed, giving error. Do you have another one?"
+2. KEEP IT SHORT. Max 1-2 sentences.
+3. Do NOT repeat the same phrases or questions you already used in the conversation history above.
+4. Be natural. Do NOT echo back their bank numbers or IDs.
+5. Follow your current strategy: {strategy_instruction}
 
 Your response:"""
 

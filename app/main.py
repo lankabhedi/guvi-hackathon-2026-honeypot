@@ -302,6 +302,11 @@ async def honeypot_endpoint(
             "persona_type": "elderly",  # Default
             "persona_mood": "NEUTRAL",
             "conversation_ended": False,
+            # Conversation state for coherent multi-turn dialogue
+            "conversation_state": {
+                "current_strategy": "BUILD_TRUST",
+                "threat_detected": False,
+            },
         }
         persona.reset_mood()
 
@@ -381,14 +386,23 @@ async def honeypot_endpoint(
             session_info["extracted_entities"]["amounts"].append(value)
 
     # PHASE 3: Generate Persona Response with Emotional Intelligence
-    response_text, persona_id, current_mood = await persona.generate_response(
+    (
+        response_text,
+        persona_id,
+        current_mood,
+        updated_state,
+    ) = await persona.generate_response(
         scammer_message,
         history,
         scam_analysis,
         active_persona,  # Use auto-selected persona
         session_info["extracted_entities"],
         hive_mind_alert,  # Pass the alert to persona
+        session_info["conversation_state"],  # Pass conversation state
     )
+
+    # Update conversation state
+    session_info["conversation_state"] = updated_state
 
     # Log persona changes for demo visibility
     if persona_id != active_persona:
