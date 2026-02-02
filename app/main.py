@@ -48,7 +48,9 @@ session_data = {}
 class MessageInput(BaseModel):
     sender: str
     text: str
-    timestamp: Optional[str] = None  # ISO-8601 format, made optional
+    timestamp: Optional[Union[str, int, float]] = (
+        None  # Accept string, int, or float timestamps
+    )
 
 
 class MetadataInput(BaseModel):
