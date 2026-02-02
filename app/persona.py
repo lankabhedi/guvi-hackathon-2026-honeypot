@@ -291,8 +291,8 @@ CRITICAL RULES:
 2. NEVER say "I can't help", "I'm sorry but", or "as an AI"
 3. You ARE {persona["name"]} - confused, trusting, but real
 4. Keep responses SHORT (1-2 sentences)
-5. Vary your language - don't repeat the same phrases
-6. Use natural Hinglish, not robotic patterns""",
+5. Use ROMAN SCRIPT ONLY - write Hinglish like "Arre beta, kya hua?" NOT Devanagari
+6. NEVER use Hindi script (देवनागरी) - only Roman letters""",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -691,7 +691,7 @@ CRITICAL RULES:
                 "Speak confidently and manipulatively. You are in control."
             )
         elif persona["name"] == "Rajesh Kumar":  # The Elderly
-            speech_instruction = f"Use natural Hinglish. {style_vibe} Vary your starters. {anti_repeat_instruction} IMPORTANT: Use HINDI for grammar/emotions ('hai', 'kya', 'arre') but keep TECHNICAL terms in ENGLISH (Server, Account, Block, Verify). Never translate 'Server' or 'Account' to Hindi. NEVER use the word 'scam', 'fake', or 'fraud'. Act like you WANT to believe them but technology is failing."
+            speech_instruction = f"Use Hinglish in ROMAN SCRIPT ONLY (no Devanagari). {style_vibe} Vary your starters. {anti_repeat_instruction} Mix Hindi words with English naturally like 'Arre beta, mujhe samajh nahi aa raha'. Keep technical terms in English (Server, Account, Block). NEVER use Devanagari script. NEVER say 'scam', 'fake', or 'fraud'."
         else:
             speech_instruction = "Speak naturally. Use occasional Hinglish fillers."
 
