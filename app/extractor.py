@@ -9,7 +9,7 @@ class EntityExtractor:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "qwen/qwen3-32b"  # Upgraded to Qwen 3 32B
+        self.model = "openai/gpt-oss-20b"
 
     async def extract_entities(
         self, current_message: str, history: List[Dict]

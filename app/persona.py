@@ -11,7 +11,7 @@ class PersonaEngine:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "qwen/qwen3-32b"  # Upgraded to Qwen 3 32B for superior role-play
+        self.model = "openai/gpt-oss-120b"
         self.current_mood = "NEUTRAL"
         self.mood_history = []
         self.last_openers = []  # Track last 3 opening words

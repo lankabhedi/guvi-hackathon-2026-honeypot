@@ -9,7 +9,7 @@ class ScamDetector:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "qwen/qwen3-32b"  # Upgraded to Qwen 3 32B for advanced reasoning
+        self.model = "openai/gpt-oss-20b"
 
     async def analyze(
         self, message: str, conversation_history: list | None = None
