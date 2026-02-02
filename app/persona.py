@@ -163,6 +163,18 @@ class PersonaEngine:
                 "suspicion": "BLACK_OPS_GREED",
             },
             "BLACK_OPS_FEAR": {"help": "COOPERATIVE", "panic": "BLACK_OPS_FEAR"},
+            "BLACK_OPS_REVERSE": {
+                "payment": "VICTORIOUS",
+                "refusal": "BLACK_OPS_GREED",
+            },  # If they refuse penny drop, try greed
+            "BLACK_OPS_JEALOUSY": {
+                "denial": "BLACK_OPS_REVERSE",
+                "proof": "SKEPTICAL",
+            },  # If they deny Amit, try Penny Drop
+            "BLACK_OPS_BANK_FISH": {
+                "new_account": "FAKE_ERROR",
+                "same_account": "BLACK_OPS_REVERSE",
+            },
         }
 
     async def generate_response(
@@ -378,6 +390,35 @@ class PersonaEngine:
         # Add dynamic transitions for Black Ops
         current_transitions["trigger_greed"] = "BLACK_OPS_GREED"
         current_transitions["trigger_fear"] = "BLACK_OPS_FEAR"
+        current_transitions["trigger_reverse"] = "BLACK_OPS_REVERSE"  # Penny drop
+        current_transitions["trigger_jealousy"] = "BLACK_OPS_JEALOUSY"  # Amit ploy
+        current_transitions["trigger_bank_fish"] = "BLACK_OPS_BANK_FISH"  # Bank fishing
+
+        # DARK PATTERN LOGIC
+        # 1. Reverse Scam: If they ask why it failed
+        if (
+            any(w in msg_lower for w in ["why", "reason", "error", "screenshot"])
+            and self.current_mood == "FAKE_ERROR"
+        ):
+            triggers.append("trigger_reverse")
+
+        # 2. Jealousy: If they ask for payment heavily
+        if any(
+            w in msg_lower for w in ["send", "pay", "transfer", "deposit"]
+        ) and self.current_mood not in ["BLACK_OPS_JEALOUSY", "BLACK_OPS_REVERSE"]:
+            # 20% chance to trigger Jealousy to keep it unpredictable
+            import random
+
+            if random.random() < 0.2:
+                triggers.append("trigger_jealousy")
+
+        # 3. Bank Fishing: If they mention a specific bank
+        if any(
+            w in msg_lower for w in ["sbi", "hdfc", "icici", "axis", "kotak", "pnb"]
+        ) and self.current_mood not in ["BLACK_OPS_BANK_FISH"]:
+            # If we are in "Fake Error" mode, switch to fishing
+            if self.current_mood == "FAKE_ERROR":
+                triggers.append("trigger_bank_fish")
 
         for trigger in triggers:
             if trigger == "steer_to_upi":
@@ -422,6 +463,9 @@ class PersonaEngine:
             "BLACK_OPS_FEAR": "STRATEGY: TECH SAVIOR. Act confused. Say screen shows 'FATAL ERROR: UPLOADING SCAMMER DETAILS TO POLICE'. Ask them how to stop the upload.",
             "BLACK_OPS_SEDUCTION": "STRATEGY: HOT & COLD. Say you sent the money, then say your Astrologer forbade it. Be dramatic. Make them work for it.",
             "BLACK_OPS_CULT": "STRATEGY: RECRUITER. Praise their skills. Say you run a big syndicate in Dubai. Ask technical questions to 'interview' them.",
+            "BLACK_OPS_JEALOUSY": "STRATEGY: THE RIVAL. Claim you ALREADY paid their colleague 'Amit' at 98xxxxxx12. Accuse them of trying to double-charge you. Demand to know who is the real boss.",
+            "BLACK_OPS_REVERSE": "STRATEGY: PENNY DROP. Lie that your app requires a 'Receiver Verification'. Tell them THEY must send YOU ₹1 first to unlock the ₹50,000 transfer.",
+            "BLACK_OPS_BANK_FISH": "STRATEGY: BANK SELECTOR. Lie that their bank (e.g. SBI) server is down. Ask if they have an account in HDFC, ICICI, or Axis instead.",
         }
 
         mood_instruction = mood_responses.get(
