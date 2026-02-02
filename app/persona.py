@@ -1,6 +1,6 @@
 from groq import AsyncGroq
 import os
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 
 class PersonaEngine:
@@ -11,7 +11,9 @@ class PersonaEngine:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "llama-3.1-8b-instant"
+        self.model = (
+            "llama-3.3-70b-versatile"  # Upgraded to 70B for better Hinglish and nuance
+        )
         self.current_mood = "NEUTRAL"
         self.mood_history = []
         self.last_openers = []  # Track last 3 opening words
@@ -184,8 +186,8 @@ class PersonaEngine:
         history: List[Dict],
         scam_analysis: Dict,
         persona_type: str = "elderly",
-        current_entities: Dict = None,
-        hive_mind_alert: Dict = None,  # Added Hive Mind Alert
+        current_entities: Optional[Dict] = None,
+        hive_mind_alert: Optional[Dict] = None,  # Added Hive Mind Alert
     ) -> Tuple[str, str, str]:
         """
         Generate persona response with emotional intelligence
@@ -257,8 +259,8 @@ class PersonaEngine:
         self,
         scammer_message: str,
         scam_analysis: Dict,
-        current_entities: Dict = None,
-        hive_mind_alert: Dict = None,
+        current_entities: Optional[Dict] = None,
+        hive_mind_alert: Optional[Dict] = None,
     ):
         """Update emotional state based on scammer input and extracted intel"""
         msg_lower = scammer_message.lower()
@@ -446,8 +448,8 @@ class PersonaEngine:
         persona: Dict,
         scammer_message: str,
         context: str,
-        current_entities: Dict = None,
-        hive_mind_alert: Dict = None,
+        current_entities: Optional[Dict] = None,
+        hive_mind_alert: Optional[Dict] = None,
     ) -> str:
         """Build prompt that incorporates emotional state"""
 
@@ -556,7 +558,7 @@ class PersonaEngine:
                 "Speak confidently and manipulatively. You are in control."
             )
         elif persona["name"] == "Rajesh Kumar":  # The Elderly
-            speech_instruction = f"Use natural Hinglish. {style_vibe} Vary your starters. {anti_repeat_instruction}"
+            speech_instruction = f"Use natural Hinglish. {style_vibe} Vary your starters. {anti_repeat_instruction} IMPORTANT: Use HINDI for grammar/emotions ('hai', 'kya', 'arre') but keep TECHNICAL terms in ENGLISH (Server, Account, Block, Verify). Never translate 'Server' or 'Account' to Hindi."
         else:
             speech_instruction = "Speak naturally. Use occasional Hinglish fillers."
 

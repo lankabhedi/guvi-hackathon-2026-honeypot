@@ -9,7 +9,7 @@ class EntityExtractor:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "llama-3.1-8b-instant"
+        self.model = "llama-3.3-70b-versatile"  # Upgraded to 70B for better accuracy
 
     async def extract_entities(
         self, current_message: str, history: List[Dict]
@@ -67,7 +67,7 @@ CONFIDENCE SCORES:
 Return this exact JSON structure:
 {{
     "financial": {{
-        "bank_accounts": [{{"value": "1234567890", "confidence": 0.95, "context": "send money to this account"}}],
+        "bank_accounts": [{{"value": "FULL_ACCOUNT_NUMBER_HERE", "confidence": 0.95, "context": "send money to this account"}}],
         "upi_ids": [],
         "ifsc_codes": [],
         "wallet_ids": []
@@ -100,6 +100,7 @@ CRITICAL RULES:
 3. Include confidence scores for every extraction
 4. If no entities found, return empty arrays
 5. Be conservative - only high confidence extractions
+6. EXTRACT EXACTLY AS WRITTEN. Do not alter, truncate, or normalize numbers. Preserve full 16-digit account numbers.
 
 Return ONLY the JSON, no other text."""
 
