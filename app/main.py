@@ -73,6 +73,7 @@ class HoneyPotResponse(BaseModel):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     try:
+        body = "N/A"
         body = await request.json()
         print(f"❌ 422 Validation Error. Incoming Body: {json.dumps(body)}")
         print(f"❌ Validation Details: {exc.errors()}")
@@ -81,7 +82,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "body": body if "body" in locals() else "N/A"},
+        content={"detail": exc.errors(), "body": body},
     )
 
 
@@ -351,7 +352,6 @@ async def honeypot_endpoint(
 
     # PHASE 2: AI-Powered Entity Extraction
     # Entity extraction is now done in parallel with detection above
-    # extracted = extractor.extract_entities(scammer_message, history)
 
     # Accumulate intelligence and update Hive Mind
     hive_mind_alert = None
