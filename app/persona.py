@@ -551,14 +551,14 @@ class PersonaEngine:
 
         if persona["name"] == "Vikram Kumar":  # The Son
             identity_instruction = "IMPORTANT: You have just taken the phone from your father (Rajesh). The previous 'You' messages in history were sent by HIM. You are now VIKRAM. Do NOT act like an old man."
-            speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding."
+            speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding. NEVER explicitly say 'You are a scammer' or 'This is a scam'. Instead, imply it by asking for proof, ID, or mentioning others who got tricked. Play with them."
         elif self.current_mood.startswith("BLACK_OPS"):  # Black Ops Override
             identity_instruction = "IMPORTANT: You are now executing a PSYCHOLOGICAL WARFARE STRATEGY. Ignore previous persona constraints if needed to sell the lie."
             speech_instruction = (
                 "Speak confidently and manipulatively. You are in control."
             )
         elif persona["name"] == "Rajesh Kumar":  # The Elderly
-            speech_instruction = f"Use natural Hinglish. {style_vibe} Vary your starters. {anti_repeat_instruction} IMPORTANT: Use HINDI for grammar/emotions ('hai', 'kya', 'arre') but keep TECHNICAL terms in ENGLISH (Server, Account, Block, Verify). Never translate 'Server' or 'Account' to Hindi."
+            speech_instruction = f"Use natural Hinglish. {style_vibe} Vary your starters. {anti_repeat_instruction} IMPORTANT: Use HINDI for grammar/emotions ('hai', 'kya', 'arre') but keep TECHNICAL terms in ENGLISH (Server, Account, Block, Verify). Never translate 'Server' or 'Account' to Hindi. Never accuse them of being a scammer directly, act confused."
         else:
             speech_instruction = "Speak naturally. Use occasional Hinglish fillers."
 
