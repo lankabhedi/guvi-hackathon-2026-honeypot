@@ -232,9 +232,11 @@ class PersonaEngine:
             content = response.choices[0].message.content or ""
 
             # Remove <think> blocks if present (common in reasoning models)
-            import re
+            # Only run regex if content is not empty
+            if content:
+                import re
 
-            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
 
             # Remove any other common reasoning markers if necessary
             # Qwen 3 usually separates reasoning, but just in case
@@ -258,6 +260,11 @@ class PersonaEngine:
             return response_text, persona_type, self.current_mood
 
         except Exception as e:
+            print(f"❌ PERSONA GENERATION ERROR: {str(e)}")  # LOG THE ACTUAL ERROR
+            import traceback
+
+            traceback.print_exc()  # Print full stack trace
+
             return (
                 self._fallback_response(persona_type),
                 persona_type,
