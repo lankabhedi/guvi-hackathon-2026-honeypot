@@ -223,8 +223,7 @@ class PersonaEngine:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.8,  # High creativity for roleplay
-                # max_tokens removed to allow full reasoning + response generation
-                # max_tokens=150,
+                max_tokens=300,  # Set a safe limit to prevent infinite reasoning loops (300 is enough for thought + response)
                 # reasoning_format="parsed" # REMOVED due to library version incompatibility
             )
 

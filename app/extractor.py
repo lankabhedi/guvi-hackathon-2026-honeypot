@@ -101,6 +101,7 @@ CRITICAL RULES:
 4. If no entities found, return empty arrays
 5. Be conservative - only high confidence extractions
 6. EXTRACT EXACTLY AS WRITTEN. Do not alter, truncate, or normalize numbers. Preserve full 16-digit account numbers.
+7. THINKING PROCESS: Be concise. Don't over-analyze.
 
 Return ONLY the JSON, no other text."""
 
