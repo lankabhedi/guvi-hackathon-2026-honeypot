@@ -309,6 +309,9 @@ Your response:"""
         # Remove Devanagari script (U+0900 to U+097F)
         response = re.sub(r"[\u0900-\u097F]+", "", response)
 
+        # Remove emojis (keep only basic ASCII + extended Latin)
+        response = re.sub(r"[^\x00-\x7F\u00C0-\u00FF]+", "", response)
+
         # Remove em dashes
         response = response.replace("—", ", ").replace("–", "-")
 
