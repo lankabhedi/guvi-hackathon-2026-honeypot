@@ -74,8 +74,8 @@ class HoneyPotResponse(BaseModel):
 # Debugging Middleware to catch 422 errors and log incoming JSON
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    body: Any = "N/A"
     try:
-        body = "N/A"
         body = await request.json()
         print(f"❌ 422 Validation Error. Incoming Body: {json.dumps(body)}")
         print(f"❌ Validation Details: {exc.errors()}")
@@ -338,17 +338,24 @@ async def honeypot_endpoint(
     if not session_info["scam_type"] and is_scam:
         session_info["scam_type"] = scam_analysis.get("scam_type", "UNKNOWN")
 
-        # AUTO-PERSONA SELECTION: Pick the best victim for the scam
+        # AUTO-PERSONA SELECTION: Pick the best victim for the scam type
         scam_type = session_info["scam_type"]
-        selected_persona = "elderly"  # Default
 
-        if scam_type == "SEXTORTION":
-            selected_persona = "naive_girl"  # Neha acts scared/ashamed
-        elif scam_type == "JOB_SCAM" or scam_type == "INVESTMENT":
-            selected_persona = "student"  # Arun is desperate/greedy
-        elif scam_type == "FAMILY_EMERGENCY":
-            selected_persona = "homemaker"  # Priya is protective
+        # Mapping scam types to ideal victim personas
+        persona_map = {
+            "SEXTORTION": "naive_girl",  # Neha - scared, embarrassed, wants to hide from parents
+            "JOB_SCAM": "student",  # Arun - desperate for job, naive about offers
+            "INVESTMENT": "student",  # Arun - eager for quick money
+            "LOTTERY": "elderly",  # Rajesh - trusting, excited about winning
+            "BANK_FRAUD": "elderly",  # Rajesh - confused by tech, trusts "bank officials"
+            "KYC_UPDATE": "elderly",  # Rajesh - worried about account being blocked
+            "FAMILY_EMERGENCY": "homemaker",  # Priya - protective, worried about family
+            "TECH_SUPPORT": "elderly",  # Rajesh - doesn't understand computers
+            "LOAN_SCAM": "student",  # Arun - needs money for fees
+            "REFUND_SCAM": "homemaker",  # Priya - handles household finances
+        }
 
+        selected_persona = persona_map.get(scam_type, "elderly")  # Default to elderly
         session_info["persona_type"] = selected_persona
         print(
             f"🎭 [AUTO-SELECT] Scam Type: {scam_type} -> Selected Persona: {selected_persona}"
@@ -393,7 +400,7 @@ async def honeypot_endpoint(
         if value and value not in session_info["extracted_entities"]["amounts"]:
             session_info["extracted_entities"]["amounts"].append(value)
 
-    # PHASE 3: Generate Persona Response with Emotional Intelligence
+    # PHASE 3: Generate Persona Response
     (
         response_text,
         persona_id,
@@ -403,22 +410,14 @@ async def honeypot_endpoint(
         scammer_message,
         history,
         scam_analysis,
-        active_persona,  # Use auto-selected persona
+        active_persona,
         session_info["extracted_entities"],
-        hive_mind_alert,  # Pass the alert to persona
-        session_info["conversation_state"],  # Pass conversation state
+        hive_mind_alert,
+        session_info["conversation_state"],
     )
 
     # Update conversation state
     session_info["conversation_state"] = updated_state
-
-    # Log persona changes for demo visibility
-    if persona_id != active_persona:
-        print(
-            f"🔄 [PERSONA SWITCH] Switched from {active_persona} to {persona_id} (Mood: {current_mood})"
-        )
-        session_info["persona_type"] = persona_id  # Persist the switch
-
     session_info["persona_mood"] = current_mood
 
     # PHASE 4: Background Processing (Lifecycle & Callback)

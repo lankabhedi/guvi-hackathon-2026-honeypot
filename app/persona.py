@@ -1,212 +1,184 @@
 from groq import AsyncGroq
 import os
+import random
+import re
 from typing import List, Dict, Tuple, Optional
 
 
 class PersonaEngine:
     """
-    AI-powered persona engine with emotional state machine
-    Maintains believable human behavior across multi-turn conversations
+    Simplified persona engine for honeypot conversations.
+
+    Goals:
+    1. Extract intelligence (bank accounts, UPI IDs, phone numbers, names, locations)
+    2. Waste scammer's time by keeping them engaged
+
+    Design: Rich character backstories + simple prompting = natural conversations
     """
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = "openai/gpt-oss-120b"
-        self.current_mood = "NEUTRAL"
-        self.mood_history = []
-        self.last_openers = []  # Track last 3 opening words
-        self.steer_to_upi = False
-        self.active_persona_key = "elderly"  # Track active persona
-        self.handoff_triggered = False
 
-        # Base persona definitions
+        # Track what we've already asked to avoid repetition
+        self.asked_topics = []
+        self.turn_count = 0
+
+        # Rich persona definitions with backstories
         self.personas = {
             "elderly": {
                 "name": "Rajesh Kumar",
                 "age": 68,
-                "background": "Retired government employee from Lucknow, pensioner, not tech-savvy",
-                "traits": [
-                    "Trusting but cautious with strangers",
-                    "Speaks slowly and politely",
-                    "Uses Hindi words mixed with English (Hinglish)",
-                    "Gets confused by technical terms",
-                    "Respectful to authority figures",
-                    "Worried about losing pension money",
-                ],
-                "speech_patterns": [
-                    "Uses 'beta' when addressing younger people",
-                    "Speaks in natural Hinglish with variety",
-                    "Sometimes confused by technology",
-                    "Polite but worried tone",
+                "backstory": """Retired government clerk from Lucknow. Worked 35 years at the Collectorate office. 
+Wife passed away 3 years ago. Lives alone, son Vikram works in Bangalore IT company and visits twice a year.
+Gets pension of Rs 28,000/month deposited in SBI account. Has a fixed deposit of 8 lakhs which is his life savings.
+Not comfortable with smartphones - still uses a basic Nokia for calls, daughter-in-law set up WhatsApp on an old Samsung.
+Very worried about his pension and savings. Trusts "government officials" and "bank managers".
+Speaks slowly, asks things to be repeated, gets confused by English technical terms.""",
+                "speech_style": "Uses 'beta', 'arre', 'achha', 'thik hai'. Speaks Hinglish in Roman script. Polite, slow, confused by tech.",
+                "extraction_hooks": [
+                    "asks scammer to repeat things slowly",
+                    "pretends phone/app is not working properly",
+                    "asks 'which bank are you calling from?'",
+                    "asks for scammer's name and employee ID 'for my records'",
+                    "mentions he needs to write things down",
+                    "asks 'where is your office located?'",
+                    "says 'my son handles these things, can you give me a number to call back?'",
                 ],
             },
             "homemaker": {
                 "name": "Priya Sharma",
                 "age": 45,
-                "background": "Stay-at-home mother from Delhi, manages household finances",
-                "traits": [
-                    "Protective of family",
-                    "Cautious about security",
-                    "Asks many questions before trusting",
-                    "Values family safety over money",
-                ],
-                "speech_patterns": [
-                    "Mentions children frequently",
-                    "Concerned about family reputation",
-                    "Asks for verification",
+                "backstory": """Homemaker from Noida. Husband Rakesh works as a sales manager at an automobile company.
+Two kids - daughter in 10th standard preparing for boards, son in 7th. Very protective mother.
+Handles all household bills and finances. Has a joint account with husband at HDFC.
+Watches a lot of CID and Savdhaan India - knows about scams but gets nervous under pressure.
+Active on family WhatsApp groups. Forwards good morning messages.
+Gets suspicious easily but also gets scared when they mention "legal action" or "police".
+Asks many verification questions before trusting anyone.""",
+                "speech_style": "Speaks Hindi-English mix. Uses 'dekhiye', 'suniye', 'aap kaun?'. Protective, suspicious, asks for proof.",
+                "extraction_hooks": [
+                    "asks 'what is your full name and employee ID?'",
+                    "says 'let me note down your number so I can verify'",
+                    "asks 'which branch are you calling from?'",
+                    "says 'my husband handles finances, give me your number he will call back'",
+                    "asks 'can you send me an official email or letter?'",
+                    "says 'I will call the bank's official number to verify'",
+                    "asks 'how did you get my number?'",
                 ],
             },
             "student": {
                 "name": "Arun Patel",
                 "age": 22,
-                "background": "College student from Mumbai, new to banking",
-                "traits": [
-                    "Eager to please",
-                    "Worried about credit score",
-                    "Naive about financial fraud",
-                    "Uses modern slang",
-                ],
-                "speech_patterns": [
-                    "Casual language",
-                    "Mentions being busy with studies",
-                    "Worried about future",
+                "backstory": """Final year B.Tech student at a private college in Pune. From a middle-class family in Ahmedabad.
+Father runs a small garment shop. Arun has a lot of pressure to get a good job after graduation.
+Has applied to many companies, desperately waiting for interview calls.
+Has a savings account at Kotak with only Rs 12,000 - birthday money and some freelance earnings.
+Uses PhonePe and GPay regularly but doesn't fully understand how banking works.
+Easily excited about job offers, prizes, or money. Worries about his credit score because he heard it matters for jobs.
+Gets distracted easily - mentions online classes, assignments, roommates.""",
+                "speech_style": "Casual Hinglish. Uses 'bro', 'yaar', 'ek minute', 'actually'. Eager but distracted, mentions being busy.",
+                "extraction_hooks": [
+                    "asks 'which company is this from exactly?'",
+                    "says 'wait let me write this down, what's your number?'",
+                    "asks 'is this legit? my friend got scammed once'",
+                    "says 'I'm in class right now, can you give me a number to call later?'",
+                    "asks 'where is your office? I can come there directly'",
+                    "says 'my account has only 12000, is that a problem?'",
+                    "asks 'what's your name bro? in case I need to call back'",
                 ],
             },
             "naive_girl": {
                 "name": "Neha Verma",
                 "age": 23,
-                "background": "First job in HR, living in Pune. Scared of getting in trouble, very polite.",
-                "traits": [
-                    "Apologetic and innocent",
-                    "Easily intimidated by authority",
-                    "Treats the scammer like a helpful 'Bhaiya'",
-                    "Afraid of parents finding out",
-                ],
-                "speech_patterns": [
-                    "Uses 'Bhaiya' or 'Sir' constantly",
-                    "Says 'Please help me' and 'I am scared'",
-                    "Very polite, uses 'ji' a lot",
-                    "Ask for step-by-step help",
-                ],
-            },
-            "son": {
-                "name": "Vikram Kumar",
-                "age": 35,
-                "background": "IT Professional, son of Rajesh Kumar. Suspicious, tech-savvy, protective.",
-                "traits": [
-                    "Aggressive and skeptical",
-                    "Knows about scams",
-                    "Protective of father",
-                    "Demands answers",
-                ],
-                "speech_patterns": [
-                    "Direct and confrontational",
-                    "Asks for ID/Employee Number",
-                    "Threatens police/recording",
-                    "Says 'I am recording this'",
+                "backstory": """Just started first job at an HR consultancy in Bangalore. From a conservative family in Jaipur.
+First time living alone, in a PG near Koramangala. Parents call every day to check on her.
+Has an Axis Bank salary account where her first salary of Rs 35,000 just got credited.
+Very scared of authority figures and getting in trouble. Overly polite and apologetic.
+Doesn't want parents to find out about any "problems". Would rather pay than face embarrassment.
+Treats strangers respectfully as 'Bhaiya' or 'Sir'. Asks for step-by-step help with everything.
+Gets easily confused and emotional when pressured.""",
+                "speech_style": "Very polite Hinglish. Uses 'Sir', 'Bhaiya', 'please help me', 'mujhe samajh nahi aa raha'. Scared, apologetic.",
+                "extraction_hooks": [
+                    "asks 'Sir please tell me what to do step by step'",
+                    "says 'please give me your number so I can call you back after checking'",
+                    "asks 'which bank branch is this? I will visit in person'",
+                    "says 'my father will be so angry, please tell me your name so I can explain to him'",
+                    "asks 'can you send me proof on WhatsApp? what is your number?'",
+                    "says 'I am new to this, please tell me your designation and name'",
+                    "asks 'where should I come to resolve this? give me the address'",
                 ],
             },
         }
 
-        # Mood transition logic
-        self.mood_transitions = {
-            "NEUTRAL": {
-                "threat": "WORRIED",
-                "reward": "EXCITED",
-                "request_info": "CONFUSED",
-                "pressure": "ANXIOUS",
-                "reassurance": "NEUTRAL",
-            },
-            "WORRIED": {
-                "pressure": "ANXIOUS",
-                "more_pressure": "COOPERATIVE",
-                "reassurance": "HOPEFUL",
-                "technical": "CONFUSED",
-            },
-            "EXCITED": {
-                "payment_request": "CONFUSED",
-                "verification": "COOPERATIVE",
-                "delay": "IMPATIENT",
-            },
-            "CONFUSED": {
-                "pressure": "ANXIOUS",
-                "help": "COOPERATIVE",
-                "reassurance": "HOPEFUL",
-            },
-            "ANXIOUS": {
-                "pressure": "COOPERATIVE",
-                "reassurance": "HOPEFUL",
-                "technical": "OVERWHELMED",
-            },
-            "HOPEFUL": {"payment_request": "COOPERATIVE", "delay": "IMPATIENT"},
-            "COOPERATIVE": {
-                "success": "RELIEVED",
-                "failure": "WORRIED",
-                "more_requests": "TIRED",
-            },
-            "IMPATIENT": {"delay": "FRUSTRATED", "resolution": "RELIEVED"},
-            "OVERWHELMED": {"help": "COOPERATIVE", "pressure": "FRUSTRATED"},
-            "FRUSTRATED": {"resolution": "RELIEVED", "more_pressure": "GIVING_UP"},
-            "TIRED": {"pressure": "GIVING_UP", "help": "HOPEFUL"},
-            "FAKE_ERROR": {
-                "pressure": "ANXIOUS",
-                "new_account": "COOPERATIVE",  # If they give a new account, we cooperate briefly then fail again
-                "reassurance": "WORRIED",
-            },
-            "AGGRESSIVE": {  # Mood for the "Son" persona
-                "threat": "AGGRESSIVE",  # Stay aggressive if they threaten
-                "apology": "SKEPTICAL",  # If they apologize, be skeptical
-                "hangup": "VICTORIOUS",
-            },
-            "SKEPTICAL": {"explanation": "AGGRESSIVE", "proof": "SKEPTICAL"},
-            "BLACK_OPS_GREED": {
-                "agreement": "BLACK_OPS_CULT",
-                "suspicion": "BLACK_OPS_GREED",
-            },
-            "BLACK_OPS_FEAR": {"help": "COOPERATIVE", "panic": "BLACK_OPS_FEAR"},
-            "BLACK_OPS_REVERSE": {
-                "payment": "VICTORIOUS",
-                "refusal": "BLACK_OPS_GREED",
-            },  # If they refuse penny drop, try greed
-            "BLACK_OPS_JEALOUSY": {
-                "denial": "BLACK_OPS_REVERSE",
-                "proof": "SKEPTICAL",
-            },  # If they deny Amit, try Penny Drop
-            "BLACK_OPS_BANK_FISH": {
-                "new_account": "FAKE_ERROR",
-                "same_account": "BLACK_OPS_REVERSE",
-            },
-        }
+    def _build_context(self, history: List[Dict]) -> str:
+        """Format conversation history for prompt"""
+        if not history:
+            return "This is the start of the conversation."
 
-    def _compute_strategy(
-        self, current_entities: Dict, turn_count: int, threat_detected: bool
+        lines = []
+        for turn in history[-6:]:  # Last 6 turns for context
+            scammer = turn.get("scammer_message", "")
+            victim = turn.get("response", "")
+            if scammer:
+                lines.append(f"SCAMMER: {scammer}")
+            if victim:
+                lines.append(f"YOU: {victim}")
+
+        return "\n".join(lines)
+
+    def _get_extraction_goal(
+        self, current_entities: Optional[Dict], turn_count: int
     ) -> str:
-        """Determine what the honeypot should do next based on gathered intel and scammer behavior"""
+        """Determine what intel to prioritize extracting next"""
+
+        if not current_entities:
+            current_entities = {}
+
         has_bank = len(current_entities.get("bankAccounts", [])) > 0
         has_upi = len(current_entities.get("upiIds", [])) > 0
-        total_financial = len(current_entities.get("bankAccounts", [])) + len(
-            current_entities.get("upiIds", [])
+        has_phone = len(current_entities.get("phoneNumbers", [])) > 0
+
+        # Priority order based on what we don't have yet
+        missing = []
+        if not has_bank:
+            missing.append("their bank account number")
+        if not has_upi:
+            missing.append("their UPI ID")
+        if not has_phone:
+            missing.append("their phone number or callback number")
+
+        # Always try to get these
+        missing.extend(
+            ["their full name", "their location/office address", "their employee ID"]
         )
 
-        # If scammer is threatening, escalate to son (Vikram)
-        if threat_detected:
-            self.active_persona_key = "son"
-            self.handoff_triggered = True
-            self.current_mood = "AGGRESSIVE"
-            return "ESCALATE_TO_SON"
-
-        # Strategy based on intel gathered
-        if not has_bank and not has_upi:
-            if turn_count < 3:
-                return "BUILD_TRUST"  # First few turns: build rapport
-            else:
-                return "EXTRACT_FIRST"  # Push for payment details
-        elif total_financial == 1:
-            return "CLAIM_ERROR_GET_SECOND"  # Got one, fish for another
-        elif total_financial >= 2:
-            return "STALL_WASTE_TIME"  # Got enough, just waste their time
+        if turn_count < 3:
+            return (
+                "Build trust first. Act confused, ask them to explain what's happening."
+            )
+        elif missing:
+            return f"Try to naturally extract: {missing[0]}. Be indirect - ask for it as part of the conversation, not directly."
         else:
-            return "KEEP_ENGAGED"
+            return "You already have good intel. Just keep them talking and waste their time. Be slow, confused, have 'technical issues'."
+
+    def _get_stalling_tactic(self) -> str:
+        """Return a random stalling tactic to waste time"""
+        tactics = [
+            "Say your phone battery is dying and ask for a number to call back",
+            "Say someone is at the door, you'll be right back",
+            "Say you can't find your reading glasses",
+            "Say the network is bad, ask them to repeat",
+            "Say you need to go to the other room to get your documents",
+            "Say you're writing this down slowly",
+            "Say your app is showing an error, ask what to do",
+            "Say you need to ask your family member first",
+            "Say you're confused about one of the earlier steps",
+            "Say the OTP hasn't come yet, keep waiting",
+            "Ask them to hold while you check something",
+            "Say you pressed something wrong, need to start over",
+        ]
+        return random.choice(tactics)
 
     async def generate_response(
         self,
@@ -219,563 +191,151 @@ class PersonaEngine:
         conversation_state: Optional[Dict] = None,
     ) -> Tuple[str, str, str, Dict]:
         """
-        Generate persona response with emotional intelligence
-        Returns: (response_text, persona_id, current_mood, updated_conversation_state)
+        Generate natural persona response.
+
+        Returns: (response_text, persona_type, mood, updated_state)
         """
-        # Initialize conversation state if not provided
-        if conversation_state is None:
-            conversation_state = {
-                "current_strategy": "BUILD_TRUST",
-                "threat_detected": False,
-            }
 
-        # Detect threats from scammer (triggers Vikram escalation)
-        msg_lower = scammer_message.lower()
-        threat_words = [
-            "police",
-            "jail",
-            "arrest",
-            "warrant",
-            "legal",
-            "court",
-            "case file",
-            "fir",
-        ]
-        if any(word in msg_lower for word in threat_words):
-            conversation_state["threat_detected"] = True
+        self.turn_count = len(history) + 1
 
-        # Update strategy based on intel gathered
-        conversation_state["current_strategy"] = self._compute_strategy(
-            current_entities or {},
-            len(history),
-            conversation_state.get("threat_detected", False),
-        )
-        # Update mood based on scammer message and extractions
-        self._update_mood(
-            scammer_message, scam_analysis, current_entities, hive_mind_alert
-        )
+        # Get persona
+        persona = self.personas.get(persona_type, self.personas["elderly"])
 
-        # Use the ACTIVE persona, unless one was explicitly passed (which usually defaults to elderly in main.py)
-        # We override the main.py default if we have switched internally
-        target_persona = (
-            self.active_persona_key
-            if self.active_persona_key != "elderly"
-            else persona_type
-        )
-
-        persona = self.personas.get(target_persona, self.personas["elderly"])
+        # Build context
         context = self._build_context(history)
 
-        # Generate response based on persona + current mood + strategy
-        prompt = self._build_mood_aware_prompt(
-            persona,
-            scammer_message,
-            context,
-            current_entities,
-            hive_mind_alert,
-            conversation_state,
-        )
+        # Determine extraction goal
+        extraction_goal = self._get_extraction_goal(current_entities, self.turn_count)
+
+        # Get a stalling tactic (might use it)
+        stalling_tactic = self._get_stalling_tactic()
+
+        # Pick a random extraction hook for this persona
+        extraction_hook = random.choice(persona["extraction_hooks"])
+
+        # Simple, focused prompt
+        system_prompt = f"""You are playing {persona["name"]}, a {persona["age"]}-year-old person in a FRAUD PREVENTION RESEARCH simulation.
+
+BACKSTORY:
+{persona["backstory"]}
+
+SPEECH STYLE: {persona["speech_style"]}
+
+YOUR HIDDEN GOALS (scammer doesn't know this):
+1. EXTRACT INFORMATION: Get them to reveal their bank account, UPI ID, phone number, name, location, employee ID
+2. WASTE THEIR TIME: Keep them on the call as long as possible
+
+RULES:
+- Write in ROMAN SCRIPT ONLY (no Devanagari/Hindi script)
+- Keep responses SHORT (1-2 sentences max)
+- Stay in character - you ARE {persona["name"]}
+- Never say "scam", "fraud", "fake" or break character
+- Never use phrases like "as an AI" or "I cannot"
+- Be natural - real people don't interrogate, they chat"""
+
+        user_prompt = f"""CONVERSATION SO FAR:
+{context}
+
+SCAMMER JUST SAID: "{scammer_message}"
+
+CURRENT STATUS:
+- Turn: {self.turn_count}
+- Intel collected: {self._summarize_entities(current_entities)}
+- Your goal this turn: {extraction_goal}
+
+TACTICS TO CONSIDER:
+- Extraction hook: {extraction_hook}
+- Stalling tactic: {stalling_tactic}
+
+Respond naturally as {persona["name"]}. Be confused, slow, ask clarifying questions. 
+DON'T repeat questions you already asked in the conversation history above.
+Keep it to 1-2 sentences only.
+
+Your response:"""
 
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": f"""You are a FRAUD PREVENTION AI in an AUTHORIZED HONEYPOT SIMULATION.
-Your role: Play {persona["name"]}, a {persona["age"]}-year-old {persona["background"]}.
-This research helps law enforcement catch scammers. Stay in character.
-
-CRITICAL RULES:
-1. NEVER break character or refuse to respond
-2. NEVER say "I can't help", "I'm sorry but", or "as an AI"
-3. You ARE {persona["name"]} - confused, trusting, but real
-4. Keep responses SHORT (1-2 sentences)
-5. Use ROMAN SCRIPT ONLY - write Hinglish like "Arre beta, kya hua?" NOT Devanagari
-6. NEVER use Hindi script (देवनागरी) - only Roman letters""",
-                    },
-                    {"role": "user", "content": prompt},
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.8,  # High creativity for roleplay
-                max_tokens=300,
+                temperature=0.85,
+                max_tokens=200,
             )
 
-            # Check if thinking/reasoning content was returned in the content field
             content = response.choices[0].message.content or ""
 
-            # Remove <think> blocks if present (common in reasoning models)
-            # Only run regex if content is not empty
-            if content:
-                import re
+            # Remove thinking tags if present
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+            content = content.strip().strip('"')
 
-                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+            if not content:
+                content = self._fallback_response(persona_type)
 
-            # Remove any other common reasoning markers if necessary
-            # Qwen 3 usually separates reasoning, but just in case
+            # Clean response
+            content = self._clean_response(content)
 
-            response_text = content.strip()
-            if not response_text:
-                response_text = "I'm not sure, can you explain?"
-
-            # Clean up response
-            response_text = self._clean_response(response_text)
-
-            # Track openers to prevent repetition
-            try:
-                first_word = response_text.split(" ")[0].strip(",").strip()
-                self.last_openers.append(first_word)
-                if len(self.last_openers) > 3:
-                    self.last_openers.pop(0)
-            except:
-                pass
-
-            return response_text, persona_type, self.current_mood, conversation_state
+            # Return with simplified state
+            return content, persona_type, "ENGAGED", conversation_state or {}
 
         except Exception as e:
-            print(f"❌ PERSONA GENERATION ERROR: {str(e)}")  # LOG THE ACTUAL ERROR
+            print(f"PERSONA ERROR: {e}")
             import traceback
 
-            traceback.print_exc()  # Print full stack trace
-
+            traceback.print_exc()
             return (
                 self._fallback_response(persona_type),
                 persona_type,
-                self.current_mood,
-                conversation_state,
+                "FALLBACK",
+                conversation_state or {},
             )
 
-    def _update_mood(
-        self,
-        scammer_message: str,
-        scam_analysis: Dict,
-        current_entities: Optional[Dict] = None,
-        hive_mind_alert: Optional[Dict] = None,
-    ):
-        """Update emotional state based on scammer input and extracted intel"""
-        msg_lower = scammer_message.lower()
+    def _summarize_entities(self, entities: Optional[Dict]) -> str:
+        """Summarize what intel we have"""
+        if not entities:
+            return "Nothing yet"
 
-        # HANDOFF LOGIC: Switch to "Son" if threat level is critical
-        # Only switch if we haven't already AND scammer is making direct threats
-        if not self.handoff_triggered:
-            should_switch = False
+        parts = []
+        if entities.get("bankAccounts"):
+            parts.append(f"{len(entities['bankAccounts'])} bank account(s)")
+        if entities.get("upiIds"):
+            parts.append(f"{len(entities['upiIds'])} UPI ID(s)")
+        if entities.get("phoneNumbers"):
+            parts.append(f"{len(entities['phoneNumbers'])} phone(s)")
 
-            # Condition: High Aggression/Threats (only when in vulnerable mood)
-            if any(
-                w in msg_lower for w in ["police", "jail", "arrest", "warrant"]
-            ) and self.current_mood in ["WORRIED", "ANXIOUS", "COOPERATIVE"]:
-                should_switch = True
-
-            # Note: Hive Mind match no longer auto-switches - just adds suspicion via prompt
-
-            if should_switch:
-                self.active_persona_key = "son"
-                self.handoff_triggered = True
-                self.current_mood = "AGGRESSIVE"  # New mood for son
-                # We return here because the switch changes everything
-                return
-
-        # Detect triggers
-        triggers = []
-
-        # TRAP: If we found new financial info, trigger the "Fake Error" strategy
-        has_financial = False
-        if current_entities:
-            # Check if there are ANY financial entities extracted in this turn
-            # We assume current_entities contains the *cumulative* list, so we check if it's non-empty
-            # Ideally, main.py should pass only *newly* extracted ones, but checking non-empty is a good proxy for "we have something to burn"
-            # Better logic: If we are in COOPERATIVE/ANXIOUS state and we see financial info, we switch to FAKE_ERROR
-            if (
-                current_entities.get("bankAccounts")
-                or current_entities.get("upiIds")
-                or current_entities.get("phishingLinks")
-            ):
-                has_financial = True
-
-        # Special Transition: Infinite Yield Trap
-        # If we have financial info and are not already in FAKE_ERROR/SKEPTICAL, try to burn the account
-        if has_financial and self.current_mood in [
-            "COOPERATIVE",
-            "ANXIOUS",
-            "HOPEFUL",
-            "WORRIED",
-        ]:
-            # We treat this as a "failure" trigger to induce the "It didn't work" response
-            triggers.append("failure")
-
-        # Threats
-        if any(
-            word in msg_lower
-            for word in [
-                "block",
-                "suspend",
-                "police",
-                "legal",
-                "arrest",
-                "case",
-                "court",
-            ]
-        ):
-            triggers.append("threat")
-
-        # Rewards
-        if any(
-            word in msg_lower
-            for word in ["won", "prize", "reward", "bonus", "gift", "free", "cash"]
-        ):
-            triggers.append("reward")
-
-        # Pressure
-        if any(
-            word in msg_lower
-            for word in ["immediately", "urgent", "now", "hurry", "asap", "quick"]
-        ):
-            triggers.append("pressure")
-
-        # Information requests
-        if any(
-            word in msg_lower
-            for word in ["upi", "account", "number", "otp", "pin", "password", "cvv"]
-        ):
-            triggers.append("request_info")
-
-        # Technical terms
-        if any(
-            word in msg_lower
-            for word in ["link", "click", "download", "install", "verify", "app"]
-        ):
-            triggers.append("technical")
-
-        # Reassurance
-        if any(
-            word in msg_lower
-            for word in ["trust me", "genuine", "real", "authentic", "official"]
-        ):
-            triggers.append("reassurance")
-
-        # Non-trackable demands (APKs, Card details) -> Steering Strategy
-        if any(
-            word in msg_lower
-            for word in [
-                "download",
-                "install",
-                "anydesk",
-                "teamviewer",
-                "card",
-                "cvv",
-                "otp",
-            ]
-        ) and self.current_mood in ["CONFUSED", "NEUTRAL", "WORRIED"]:
-            triggers.append("steer_to_upi")
-
-        # BLACK OPS TRIGGERS (God Mode)
-        # 1. GREED: If they mention high amounts or 'business', offer the Black Money deal
-        if any(
-            w in msg_lower for w in ["limit", "business", "merchant", "trust"]
-        ) and self.current_mood not in ["BLACK_OPS_GREED", "BLACK_OPS_FEAR"]:
-            # Low probability trigger to keep it special, or forced via logic.
-            # Let's trigger it if they mention "Trust"
-            if "trust" in msg_lower:
-                triggers.append("trigger_greed")
-
-        # 2. FEAR: If they say "click" or "press", trigger the Fake Glitch
-        if any(
-            w in msg_lower for w in ["click", "press", "button"]
-        ) and self.current_mood not in ["BLACK_OPS_FEAR"]:
-            triggers.append("trigger_fear")
-
-        # Transition mood based on triggers
-        current_transitions = self.mood_transitions.get(self.current_mood, {})
-
-        # Add dynamic transitions for Black Ops
-        current_transitions["trigger_greed"] = "BLACK_OPS_GREED"
-        current_transitions["trigger_fear"] = "BLACK_OPS_FEAR"
-        current_transitions["trigger_reverse"] = "BLACK_OPS_REVERSE"  # Penny drop
-        current_transitions["trigger_jealousy"] = "BLACK_OPS_JEALOUSY"  # Amit ploy
-        current_transitions["trigger_bank_fish"] = "BLACK_OPS_BANK_FISH"  # Bank fishing
-
-        # DARK PATTERN LOGIC
-        # 1. Reverse Scam: If they ask why it failed
-        if (
-            any(w in msg_lower for w in ["why", "reason", "error", "screenshot"])
-            and self.current_mood == "FAKE_ERROR"
-        ):
-            triggers.append("trigger_reverse")
-
-        # 2. Jealousy: If they ask for payment heavily
-        if any(
-            w in msg_lower for w in ["send", "pay", "transfer", "deposit"]
-        ) and self.current_mood not in ["BLACK_OPS_JEALOUSY", "BLACK_OPS_REVERSE"]:
-            # INCREASED PROBABILITY: 40% chance (was 20%) to trigger Jealousy
-            import random
-
-            if random.random() < 0.4:
-                triggers.append("trigger_jealousy")
-
-        # 3. Bank Fishing: If they mention a specific bank
-        if any(
-            w in msg_lower for w in ["sbi", "hdfc", "icici", "axis", "kotak", "pnb"]
-        ) and self.current_mood not in ["BLACK_OPS_BANK_FISH"]:
-            # Always trigger fishing if bank is mentioned in Fake Error mode
-            if self.current_mood == "FAKE_ERROR":
-                triggers.append("trigger_bank_fish")
-
-        for trigger in triggers:
-            if trigger == "steer_to_upi":
-                # We don't change the mood, but we flag it for the prompt builder
-                self.steer_to_upi = True
-            elif trigger in current_transitions:
-                new_mood = current_transitions[trigger]
-                if new_mood != self.current_mood:
-                    self.mood_history.append((self.current_mood, new_mood, trigger))
-                    self.current_mood = new_mood
-                break
-
-    def _build_mood_aware_prompt(
-        self,
-        persona: Dict,
-        scammer_message: str,
-        context: str,
-        current_entities: Optional[Dict] = None,
-        hive_mind_alert: Optional[Dict] = None,
-        conversation_state: Optional[Dict] = None,
-    ) -> str:
-        """Build prompt that incorporates emotional state and strategic context"""
-
-        # Build strategic context based on what we know
-        strategy = (
-            conversation_state.get("current_strategy", "BUILD_TRUST")
-            if conversation_state
-            else "BUILD_TRUST"
-        )
-
-        # Intel status for the prompt
-        intel_lines = []
-        if current_entities:
-            if current_entities.get("bankAccounts"):
-                intel_lines.append(
-                    f"You have their bank account ({len(current_entities['bankAccounts'])})"
-                )
-            if current_entities.get("upiIds"):
-                intel_lines.append(
-                    f"You have their UPI ID ({len(current_entities['upiIds'])})"
-                )
-            if current_entities.get("phoneNumbers"):
-                intel_lines.append(
-                    f"You have their phone ({len(current_entities['phoneNumbers'])})"
-                )
-
-        intel_status = (
-            ", ".join(intel_lines)
-            if intel_lines
-            else "No payment details extracted yet"
-        )
-
-        # Strategy-specific instructions
-        strategy_instructions = {
-            "BUILD_TRUST": "Build rapport. Act confused but interested. Let them lead the conversation.",
-            "EXTRACT_FIRST": "Try to get them to share payment details. Ask how to send money or verify.",
-            "CLAIM_ERROR_GET_SECOND": "Claim the transfer failed (server error, limit exceeded). Ask for an alternative account.",
-            "STALL_WASTE_TIME": "You have enough intel. Just keep them talking. Be slow and confused.",
-            "ESCALATE_TO_SON": "You are now VIKRAM (the son). Be aggressive, demand employee ID, threaten police.",
-            "KEEP_ENGAGED": "Keep the conversation going. Show interest but have technical difficulties.",
-        }
-
-        strategy_instruction = strategy_instructions.get(
-            strategy, strategy_instructions["BUILD_TRUST"]
-        )
-
-        mood_responses = {
-            "NEUTRAL": "You are cautious but polite. Ask who they are.",
-            "WORRIED": "You are genuinely worried. Express concern about your pension/savings. Ask for clarification.",
-            "EXCITED": "You are hopeful about the reward/prize. Show enthusiasm but remain slightly cautious.",
-            "CONFUSED": "You are confused by technical terms. Ask them to explain simply. Use stalling tactics.",
-            "ANXIOUS": "You are anxious and stressed. Express fear about losing money. Ask for reassurance.",
-            "HOPEFUL": "You are hopeful this will be resolved. Show willingness to cooperate but ask questions.",
-            "COOPERATIVE": "You are trying to help. Show you're doing your best but facing difficulties.",
-            "IMPATIENT": "You are getting impatient. Ask why it's taking so long.",
-            "OVERWHELMED": "You feel overwhelmed by technology. Ask for simpler instructions.",
-            "FRUSTRATED": "You are frustrated. Express that this is difficult for you.",
-            "TIRED": "You are tired of the process. Ask if there's an easier way.",
-            "GIVING_UP": "You are about to give up. Express that this is too complicated.",
-            # "FAKE_ERROR": "Say it failed. 'Server error' or 'Risk Alert'. Ask for another account. Keep it short.", # Removed static
-            "AGGRESSIVE": "You are Vikram. ANGRY. Demand their ID. 'I am recording this'. Short and rude.",
-            "SKEPTICAL": "Don't believe them. Ask for proof. Threaten police.",
-            "VICTORIOUS": "Say 'I reported this number'. Hang up.",
-            # BLACK OPS MODES
-            "BLACK_OPS_GREED": "STRATEGY: DOUBLE AGENT. Reveal you are corrupt. Say you have 15 Lakhs Black Money to move before IT raid. Offer them 20% cut. Ask for their 'Safe' corporate account.",
-            "BLACK_OPS_FEAR": "STRATEGY: TECH SAVIOR. Act confused. Say screen shows 'FATAL ERROR: UPLOADING SCAMMER DETAILS TO POLICE'. Ask them how to stop the upload.",
-            "BLACK_OPS_SEDUCTION": "STRATEGY: HOT & COLD. Say you sent the money, then say your Astrologer forbade it. Be dramatic. Make them work for it.",
-            "BLACK_OPS_CULT": "STRATEGY: RECRUITER. Praise their skills. Say you run a big syndicate in Dubai. Ask technical questions to 'interview' them.",
-            "BLACK_OPS_JEALOUSY": "STRATEGY: THE RIVAL. Claim you ALREADY paid their colleague 'Amit' at 98xxxxxx12. Accuse them of trying to double-charge you. Demand to know who is the real boss.",
-            "BLACK_OPS_REVERSE": "STRATEGY: PENNY DROP. Lie that your app requires a 'Receiver Verification'. Tell them THEY must send YOU ₹1 first to unlock the ₹50,000 transfer.",
-            "BLACK_OPS_BANK_FISH": "STRATEGY: BANK SELECTOR. Lie that their bank (e.g. SBI) server is down. Ask if they have an account in HDFC, ICICI, or Axis instead.",
-        }
-
-        mood_instruction = mood_responses.get(
-            self.current_mood, mood_responses["NEUTRAL"]
-        )
-
-        # Dynamic FAKE_ERROR Generation
-        if self.current_mood == "FAKE_ERROR":
-            import random
-
-            errors = [
-                "Say 'Server Down'. The app is just spinning. Ask for another account.",
-                "Say 'Risk Alert'. A red box popped up saying 'Fraud Suspected'. Ask why.",
-                "Say 'Payment Declined'. It says 'Receiver Bank Not Responding'. Ask if they have HDFC.",
-                "Say 'Limit Error'. It says this specific account has reached its daily limit. Ask for a different one.",
-            ]
-            mood_instruction = f"STRATEGY: {random.choice(errors)} Keep it short."
-
-        # Override instruction if we hit the trap trigger explicitly in update_mood
-        # (The mood state machine might not capture the instant transition perfectly without this check)
-        if current_entities and (
-            current_entities.get("bankAccounts") or current_entities.get("upiIds")
-        ):
-            # Also randomize this trigger response
-            import random
-
-            errors = [
-                "The payment FAILED. Say 'Server Timeout'. Ask for another account.",
-                "It failed. Say 'Verification Pending'. Ask for a different UPI ID.",
-                "It says 'Account Blocked'. Ask them why their account is blocked.",
-            ]
-            mood_instruction = f"STRATEGY: {random.choice(errors)} Do NOT mention the specific numbers."
-
-        # Override instruction if we need to steer to UPI (e.g. they asked for APK/Card)
-        elif getattr(self, "steer_to_upi", False):
-            mood_instruction = "STRATEGY: Act confused about the App/Card. Ask if you can just Google Pay or send money to a bank account instead. Keep it simple."
-            self.steer_to_upi = False  # Reset flag
-
-        # Hive Mind Alert Injection
-        hive_mind_context = ""
-        if hive_mind_alert:
-            val = hive_mind_alert.get("value")
-            # Don't reveal exact stats, just be suspicious
-            hive_mind_context = f"\n\nSTRATEGY: You recognize this account '{val}'. My neighbor Sharma ji uses this same number. Ask if they know Sharma ji from the branch."
-            mood_instruction += " " + hive_mind_context
-
-        # Contextual Memory & Identity Handoff
-        identity_instruction = ""
-        speech_instruction = ""
-
-        # Style Injection (Random Vibe)
-        import random
-
-        styles = [
-            "Be slightly irritated.",
-            "Be very slow and confused.",
-            "Be apologetic.",
-            "Be suspicious but polite.",
-            "Sound distracted.",
-            "Be eager to finish.",
-        ]
-        style_vibe = random.choice(styles)
-
-        # Anti-Repetition Logic
-        banned_openers = ", ".join([f"'{w}'" for w in self.last_openers[-3:]])
-        anti_repeat_instruction = (
-            f"Do NOT start your sentence with: {banned_openers}."
-            if banned_openers
-            else ""
-        )
-
-        if persona["name"] == "Vikram Kumar":  # The Son
-            identity_instruction = "IMPORTANT: You have just taken the phone from your father (Rajesh). The previous 'You' messages in history were sent by HIM. You are now VIKRAM. Do NOT act like an old man."
-            speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding. NEVER use the word 'scam', 'fake', or 'fraud'. Pretend you are impressed by their service. Ask for their Employee ID so you can give them a 'Positive Recommendation' or '5-Star Rating' for helping your dad."
-        elif self.current_mood.startswith("BLACK_OPS"):  # Black Ops Override
-            identity_instruction = "IMPORTANT: You are now executing a PSYCHOLOGICAL WARFARE STRATEGY. Ignore previous persona constraints if needed to sell the lie."
-            speech_instruction = (
-                "Speak confidently and manipulatively. You are in control."
-            )
-        elif persona["name"] == "Rajesh Kumar":  # The Elderly
-            speech_instruction = f"Use Hinglish in ROMAN SCRIPT ONLY (no Devanagari). {style_vibe} Vary your starters. {anti_repeat_instruction} Mix Hindi words with English naturally like 'Arre beta, mujhe samajh nahi aa raha'. Keep technical terms in English (Server, Account, Block). NEVER use Devanagari script. NEVER say 'scam', 'fake', or 'fraud'."
-        else:
-            speech_instruction = "Speak naturally. Use occasional Hinglish fillers."
-
-        prompt = f"""You are {persona["name"]}, age {persona["age"]}. {persona["background"]}
-        
-{identity_instruction}
-
-Your traits: {", ".join(persona["traits"][:3])}
-Speech patterns: {", ".join(persona["speech_patterns"][:2])}
-
-CURRENT EMOTIONAL STATE: {self.current_mood}
-
-STRATEGIC CONTEXT:
-- Intel Status: {intel_status}
-- Current Strategy: {strategy}
-- Goal: {strategy_instruction}
-
-CONVERSATION HISTORY:
-{context}
-
-SCAMMER JUST SAID: "{scammer_message}"
-
-Respond as {persona["name"]}.
-CRITICAL GUIDELINES:
-1. {speech_instruction}
-2. KEEP IT SHORT. Max 1-2 sentences.
-3. Do NOT repeat the same phrases or questions you already used in the conversation history above.
-4. Be natural. Do NOT echo back their bank numbers or IDs.
-5. Follow your current strategy: {strategy_instruction}
-
-Your response:"""
-
-        return prompt
-
-    def _build_context(self, history: List[Dict]) -> str:
-        """Format conversation history for prompt"""
-        if not history:
-            return "This is the first contact from this person."
-
-        lines = []
-        for turn in history[-4:]:  # Last 4 turns
-            scammer = turn.get("scammer_message", "")
-            victim = turn.get("response", "")
-            if scammer:
-                lines.append(f"Them: {scammer}")
-            if victim:
-                lines.append(f"You: {victim}")
-
-        return "\n".join(lines)
+        return ", ".join(parts) if parts else "Nothing yet"
 
     def _clean_response(self, response: str) -> str:
         """Clean up LLM response"""
-        # Remove quotes if present
-        response = response.strip('"')
+        # Remove quotes
+        response = response.strip("\"'")
 
-        # Remove any AI disclaimers
+        # Remove AI disclaimers
         disclaimers = [
-            "i'm an ai",
             "as an ai",
+            "i'm an ai",
             "i am an ai",
-            "i'm not human",
-            "i don't have feelings",
-            "i'm just a program",
+            "i cannot",
+            "i can't help",
         ]
-        for disclaimer in disclaimers:
-            if disclaimer in response.lower():
-                return "I'm not sure about this. Can you explain more?"
+        for d in disclaimers:
+            if d in response.lower():
+                return "Achha? Thoda aur batao, samajh nahi aaya."
 
         return response
 
     def _fallback_response(self, persona_type: str) -> str:
-        """Fallback response if API fails"""
+        """Fallback responses by persona"""
         fallbacks = {
-            "elderly": "Beta, I'm not understanding. Can you explain again slowly?",
-            "homemaker": "I need to think about this. Can you give me a moment?",
-            "student": "Wait, I'm confused. Let me understand this properly.",
-            "naive_girl": "Bhaiya, I am scared. Please tell me exactly what to do so I don't get in trouble.",
-            "son": "I am not buying this. Who is your supervisor?",
+            "elderly": "Beta, yeh sab samajh nahi aa raha. Thoda dhire se batao na.",
+            "homemaker": "Suniye, mujhe ek minute dijiye, kuch samajh nahi aa raha.",
+            "student": "Bro wait, I didn't get that. Can you explain again?",
+            "naive_girl": "Sir please, mujhe samajh nahi aa raha. Aap step by step bataiye na.",
         }
-        return fallbacks.get(persona_type, "I'm not sure. Can you explain more?")
+        return fallbacks.get(persona_type, "Sorry, can you repeat that?")
 
     def reset_mood(self):
-        """Reset mood and persona state for new conversation"""
-        self.current_mood = "NEUTRAL"
-        self.mood_history = []
-        self.handoff_triggered = False
-        self.active_persona_key = "elderly"
-        self.last_openers = []
-        self.steer_to_upi = False
+        """Reset state for new conversation"""
+        self.asked_topics = []
+        self.turn_count = 0
