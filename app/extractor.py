@@ -240,8 +240,8 @@ Return ONLY the JSON, no other text."""
             "raw_extraction": {},
         }
 
-        # Bank accounts (9-18 digits)
-        bank_matches = re.findall(r"\b\d{9,18}\b", message)
+        # Bank accounts (11-18 digits, excluding 10-digit phone numbers)
+        bank_matches = re.findall(r"\b\d{11,18}\b", message)
         result["bankAccounts"] = bank_matches
 
         # UPI IDs
@@ -335,8 +335,8 @@ Respond with ONLY the JSON."""
             return should_end, reason, completeness
 
         except Exception as e:
-            # Fallback logic
-            if intel_score >= 0.75:
+            # Fallback logic - only end if we have substantial intel AND enough turns
+            if intel_score >= 0.75 and len(history) >= 5:
                 return True, "INTEL_COMPLETE", intel_score
             elif len(history) >= 20:
                 return True, "MAX_TURNS", intel_score
