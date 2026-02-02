@@ -3,8 +3,45 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 from typing import Optional, List, Dict, Any, Union
+import uvicorn
+from dotenv import load_dotenv
+import sys
+import os
+import requests
+import json
+from datetime import datetime
 
-# ... imports ...
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.detector import ScamDetector
+from app.persona import PersonaEngine
+from app.extractor import EntityExtractor
+from app.profiler import ScammerProfiler
+from app.database import (
+    init_db,
+    get_conversation_history,
+    save_conversation,
+    check_hive_mind,
+    update_hive_mind,
+)
+
+load_dotenv()
+
+app = FastAPI(title="Agentic Honey-Pot API - Intelligence Grade")
+
+# Configuration
+API_KEY = os.getenv("API_KEY", "hackathon-api-key-2026")
+GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
+MAX_CONVERSATION_TURNS = 20
+
+# Initialize components
+detector = ScamDetector()
+persona = PersonaEngine()
+extractor = EntityExtractor()
+profiler = ScammerProfiler()
+
+# Session tracking
+session_data = {}
 
 
 class MessageInput(BaseModel):
@@ -29,6 +66,22 @@ class HoneyPotRequest(BaseModel):
 class HoneyPotResponse(BaseModel):
     status: str
     reply: str
+
+
+# Debugging Middleware to catch 422 errors and log incoming JSON
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    try:
+        body = await request.json()
+        print(f"❌ 422 Validation Error. Incoming Body: {json.dumps(body)}")
+        print(f"❌ Validation Details: {exc.errors()}")
+    except Exception:
+        print("❌ 422 Error (Could not parse body)")
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": body if "body" in locals() else "N/A"},
+    )
 
 
 @app.on_event("startup")
