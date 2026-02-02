@@ -223,8 +223,8 @@ class PersonaEngine:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.8,  # High creativity for roleplay
-                max_tokens=150,  # Fast generation
-                # No reasoning_format needed for Persona (we want fast chat)
+                # max_tokens removed to allow full reasoning + response generation
+                # max_tokens=150,
             )
 
             # Check if thinking/reasoning content was returned in the content field
