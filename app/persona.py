@@ -158,6 +158,11 @@ class PersonaEngine:
                 "hangup": "VICTORIOUS",
             },
             "SKEPTICAL": {"explanation": "AGGRESSIVE", "proof": "SKEPTICAL"},
+            "BLACK_OPS_GREED": {
+                "agreement": "BLACK_OPS_CULT",
+                "suspicion": "BLACK_OPS_GREED",
+            },
+            "BLACK_OPS_FEAR": {"help": "COOPERATIVE", "panic": "BLACK_OPS_FEAR"},
         }
 
     async def generate_response(
@@ -351,8 +356,28 @@ class PersonaEngine:
         ) and self.current_mood in ["CONFUSED", "NEUTRAL", "WORRIED"]:
             triggers.append("steer_to_upi")
 
+        # BLACK OPS TRIGGERS (God Mode)
+        # 1. GREED: If they mention high amounts or 'business', offer the Black Money deal
+        if any(
+            w in msg_lower for w in ["limit", "business", "merchant", "trust"]
+        ) and self.current_mood not in ["BLACK_OPS_GREED", "BLACK_OPS_FEAR"]:
+            # Low probability trigger to keep it special, or forced via logic.
+            # Let's trigger it if they mention "Trust"
+            if "trust" in msg_lower:
+                triggers.append("trigger_greed")
+
+        # 2. FEAR: If they say "click" or "press", trigger the Fake Glitch
+        if any(
+            w in msg_lower for w in ["click", "press", "button"]
+        ) and self.current_mood not in ["BLACK_OPS_FEAR"]:
+            triggers.append("trigger_fear")
+
         # Transition mood based on triggers
         current_transitions = self.mood_transitions.get(self.current_mood, {})
+
+        # Add dynamic transitions for Black Ops
+        current_transitions["trigger_greed"] = "BLACK_OPS_GREED"
+        current_transitions["trigger_fear"] = "BLACK_OPS_FEAR"
 
         for trigger in triggers:
             if trigger == "steer_to_upi":
@@ -392,6 +417,11 @@ class PersonaEngine:
             "AGGRESSIVE": "You are Vikram. ANGRY. Demand their ID. 'I am recording this'. Short and rude.",
             "SKEPTICAL": "Don't believe them. Ask for proof. Threaten police.",
             "VICTORIOUS": "Say 'I reported this number'. Hang up.",
+            # BLACK OPS MODES
+            "BLACK_OPS_GREED": "STRATEGY: DOUBLE AGENT. Reveal you are corrupt. Say you have 15 Lakhs Black Money to move before IT raid. Offer them 20% cut. Ask for their 'Safe' corporate account.",
+            "BLACK_OPS_FEAR": "STRATEGY: TECH SAVIOR. Act confused. Say screen shows 'FATAL ERROR: UPLOADING SCAMMER DETAILS TO POLICE'. Ask them how to stop the upload.",
+            "BLACK_OPS_SEDUCTION": "STRATEGY: HOT & COLD. Say you sent the money, then say your Astrologer forbade it. Be dramatic. Make them work for it.",
+            "BLACK_OPS_CULT": "STRATEGY: RECRUITER. Praise their skills. Say you run a big syndicate in Dubai. Ask technical questions to 'interview' them.",
         }
 
         mood_instruction = mood_responses.get(
@@ -421,11 +451,16 @@ class PersonaEngine:
         # Contextual Memory & Identity Handoff
         identity_instruction = ""
         speech_instruction = ""
-        
-        if persona["name"] == "Vikram Kumar": # The Son
+
+        if persona["name"] == "Vikram Kumar":  # The Son
             identity_instruction = "IMPORTANT: You have just taken the phone from your father (Rajesh). The previous 'You' messages in history were sent by HIM. You are now VIKRAM. Do NOT act like an old man."
             speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding."
-        elif persona["name"] == "Rajesh Kumar": # The Elderly
+        elif self.current_mood.startswith("BLACK_OPS"):  # Black Ops Override
+            identity_instruction = "IMPORTANT: You are now executing a PSYCHOLOGICAL WARFARE STRATEGY. Ignore previous persona constraints if needed to sell the lie."
+            speech_instruction = (
+                "Speak confidently and manipulatively. You are in control."
+            )
+        elif persona["name"] == "Rajesh Kumar":  # The Elderly
             speech_instruction = "Use natural Hinglish (Hindi+English). Vary your starters (don't always say 'Arre beta'). Use words like 'Beta', 'Bhaiya', 'Suniyega', 'Acha'. Typos are good."
         else:
             speech_instruction = "Speak naturally. Use occasional Hinglish fillers."
