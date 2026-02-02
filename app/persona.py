@@ -464,7 +464,7 @@ class PersonaEngine:
             "FRUSTRATED": "You are frustrated. Express that this is difficult for you.",
             "TIRED": "You are tired of the process. Ask if there's an easier way.",
             "GIVING_UP": "You are about to give up. Express that this is too complicated.",
-            "FAKE_ERROR": "Say it failed. 'Server error' or 'Risk Alert'. Ask for another account. Keep it short.",
+            # "FAKE_ERROR": "Say it failed. 'Server error' or 'Risk Alert'. Ask for another account. Keep it short.", # Removed static
             "AGGRESSIVE": "You are Vikram. ANGRY. Demand their ID. 'I am recording this'. Short and rude.",
             "SKEPTICAL": "Don't believe them. Ask for proof. Threaten police.",
             "VICTORIOUS": "Say 'I reported this number'. Hang up.",
@@ -482,12 +482,32 @@ class PersonaEngine:
             self.current_mood, mood_responses["NEUTRAL"]
         )
 
+        # Dynamic FAKE_ERROR Generation
+        if self.current_mood == "FAKE_ERROR":
+            import random
+
+            errors = [
+                "Say 'Server Down'. The app is just spinning. Ask for another account.",
+                "Say 'Risk Alert'. A red box popped up saying 'Fraud Suspected'. Ask why.",
+                "Say 'Payment Declined'. It says 'Receiver Bank Not Responding'. Ask if they have HDFC.",
+                "Say 'Limit Error'. It says this specific account has reached its daily limit. Ask for a different one.",
+            ]
+            mood_instruction = f"STRATEGY: {random.choice(errors)} Keep it short."
+
         # Override instruction if we hit the trap trigger explicitly in update_mood
         # (The mood state machine might not capture the instant transition perfectly without this check)
         if current_entities and (
             current_entities.get("bankAccounts") or current_entities.get("upiIds")
         ):
-            mood_instruction = "STRATEGY: The payment FAILED. Do NOT mention the specific account number. Just say 'it failed' or 'server error'. Ask for a DIFFERENT account. Keep it short."
+            # Also randomize this trigger response
+            import random
+
+            errors = [
+                "The payment FAILED. Say 'Server Timeout'. Ask for another account.",
+                "It failed. Say 'Verification Pending'. Ask for a different UPI ID.",
+                "It says 'Account Blocked'. Ask them why their account is blocked.",
+            ]
+            mood_instruction = f"STRATEGY: {random.choice(errors)} Do NOT mention the specific numbers."
 
         # Override instruction if we need to steer to UPI (e.g. they asked for APK/Card)
         elif getattr(self, "steer_to_upi", False):
