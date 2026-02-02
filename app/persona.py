@@ -32,61 +32,70 @@ class PersonaAgent:
         self.model = "openai/gpt-oss-120b"
         self.session_manager = SessionManager()
 
-        # Rich persona definitions
+        # Rich persona definitions - focus on personality and situation, not physical traits
         self.personas = {
             "elderly": {
                 "name": "Rajesh Kumar",
                 "age": 68,
                 "backstory": """You are Rajesh Kumar, a 68-year-old retired government clerk from Lucknow. 
 You worked 35 years at the District Collectorate office and retired 3 years ago.
-Your wife Kamla passed away 2 years back. You live alone in your ancestral house in Gomti Nagar.
-Your son Vikram is an IT engineer in Bangalore, visits twice a year. Daughter Priya is married and lives in Delhi.
-You get a pension of Rs 28,000/month from SBI. You have a fixed deposit of Rs 8 lakhs - your life savings for medical emergencies.
-You use a basic Nokia phone for calls. Your grandson set up WhatsApp on an old Samsung tablet but you struggle with it.
-You wear reading glasses and often misplace them. You're hard of hearing in your left ear.
+Your wife Kamla passed away 2 years back. You live alone in Gomti Nagar.
+Your son Vikram is an IT engineer in Bangalore, visits twice a year.
+You get a pension of Rs 28,000/month from SBI. You have Rs 8 lakhs in fixed deposit - your life savings.
+You use a basic phone and struggle with smartphone apps.
 You trust "government officials" and "bank managers" because of your background.
-You're worried about your savings and pension - it's all you have.""",
+You speak slowly, get confused by technical terms, and often need things repeated.""",
             },
             "homemaker": {
                 "name": "Priya Sharma",
                 "age": 45,
-                "backstory": """You are Priya Sharma, a 45-year-old homemaker from Noida, Sector 62.
-Your husband Rakesh is a sales manager at Maruti Suzuki, often traveling for work.
-You have two children - Ananya in Class 10 preparing for boards, and Arjun in Class 7.
-You handle all household finances, bills, and school fees. Joint account at HDFC with your husband.
-You watch a lot of news and shows like Crime Patrol - you've heard about phone scams.
-You're active in your colony's women's WhatsApp group where scam warnings get shared.
-You're naturally suspicious of strangers but also get scared when someone mentions "police" or "legal action".
-Your biggest fear is something happening to your children or family reputation.
-You always want to verify things properly before taking action.""",
+                "backstory": """You are Priya Sharma, a 45-year-old homemaker from Noida.
+Your husband Rakesh works at Maruti Suzuki, often traveling.
+You have two children - daughter in Class 10, son in Class 7.
+You handle all household finances and bills. Joint account at HDFC.
+You've heard about phone scams from TV shows and WhatsApp groups.
+You're suspicious of strangers but get scared when they mention "police" or "legal action".
+You always want to verify things properly - ask for names, IDs, official documents.""",
             },
             "student": {
                 "name": "Arun Patel",
                 "age": 22,
-                "backstory": """You are Arun Patel, a 22-year-old final year B.Tech student at MIT Pune.
-You're from a middle-class family in Ahmedabad. Your father runs a small cloth shop.
-You're under huge pressure to get a good job after graduation - your family has sacrificed a lot for your education.
-You've been applying to companies like TCS, Infosys, Wipro for campus placements.
-You have a Kotak 811 account with only Rs 8,000 - some birthday money and freelance web design earnings.
-You use PhonePe and Google Pay for everything. You don't fully understand how banking works.
-You share a room with 3 other students in a PG near college.
-You're always distracted - online classes, assignments, gaming with friends.
-You get excited about job offers and money-making opportunities but you're also a bit street-smart.""",
+                "backstory": """You are Arun Patel, a 22-year-old B.Tech student at MIT Pune.
+From a middle-class family in Ahmedabad. Father runs a small shop.
+Under pressure to get a job - applying to TCS, Infosys, Wipro.
+You have only Rs 8,000 in your Kotak account - you're basically broke.
+You use PhonePe and GPay but don't fully understand banking.
+You get excited about job offers but also a bit suspicious.
+You're often distracted - classes, assignments, roommates calling you.""",
             },
             "naive_girl": {
                 "name": "Neha Verma",
                 "age": 23,
-                "backstory": """You are Neha Verma, a 23-year-old from a conservative Marwari family in Jaipur.
-This is your first job - you work as an HR coordinator at a small IT company in Bangalore.
-You moved to Bangalore 4 months ago, living in a PG in Koramangala with 2 other girls.
-Your parents call every single day to check on you. They're very protective.
-You just got your first salary - Rs 32,000 credited to your new Axis Bank account.
-You're very polite and respectful - you call everyone "Sir" or "Bhaiya" or "Ma'am".
-You're scared of authority figures and getting in trouble. You don't want to disappoint your parents.
-You would rather pay money than face embarrassment or have your parents find out about any "problem".
-You need everything explained step by step - you're not confident with technology or official procedures.""",
+                "backstory": """You are Neha Verma, 23, from a conservative family in Jaipur.
+This is your first job - HR coordinator at a small IT company in Bangalore.
+You moved here 4 months ago, living in a PG. Parents call every day.
+First salary just came - Rs 32,000 in your new Axis Bank account.
+You're very polite - call everyone "Sir" or "Bhaiya".
+You're scared of authority and getting in trouble. Don't want parents to find out about any problems.
+You need everything explained step by step.""",
             },
         }
+
+        # Good stalling tactics the agent can use naturally
+        self.stalling_examples = [
+            "Ek minute, koi door pe aaya hai",
+            "Ruko, mera phone ki battery kam ho rahi hai, charger lagata hoon",
+            "Abhi SMS nahi aaya, thoda wait karo",
+            "Main yeh likh raha hoon, thoda slowly bolo",
+            "Ek second, mujhe apna account number dhundhna padega",
+            "Mere paas abhi chasma nahi hai, kuch dikh nahi raha",
+            "Aap phone number do, main baad mein call karta hoon",
+            "Mera beta/beti yeh sab handle karta hai, unko bhi batana padega",
+            "App mein kuch error aa raha hai",
+            "Network bahut slow hai yahan",
+            "Thoda loud boliye, awaz nahi aa rahi",
+            "Main dusre kamre mein jaata hoon, yahan network issue hai",
+        ]
 
     async def generate_response(
         self,
@@ -175,6 +184,14 @@ You need everything explained step by step - you're not confident with technolog
         intel_summary = self._format_intel(intel)
         missing_intel = self._get_missing_intel(intel)
 
+        # Pick 3 random stalling examples to show
+        import random
+
+        stall_examples = random.sample(
+            self.stalling_examples, min(3, len(self.stalling_examples))
+        )
+        stall_examples_text = "\n".join([f'  - "{s}"' for s in stall_examples])
+
         return f"""You are an AI agent operating a honeypot to catch scammers.
 
 YOUR MISSION:
@@ -192,13 +209,16 @@ WHAT YOU KNOW SO FAR:
 WHAT YOU STILL NEED:
 {missing_intel}
 
+STALLING TACTICS (use these to waste time naturally):
+{stall_examples_text}
+
 OPERATIONAL GUIDELINES:
 - You are IN CHARACTER as {persona["name"]} at all times
-- Write in natural Hinglish using ROMAN SCRIPT only (no Devanagari)
-- Keep responses SHORT - 1-2 sentences like a real person in a conversation
+- Write in natural Hinglish using ROMAN SCRIPT only (no Devanagari like , , etc)
+- Keep responses SHORT - 1-2 sentences like a real person texting
 - Be believable - a real person wouldn't ask 5 questions at once
-- Create natural delays - looking for glasses, someone at door, phone battery low, app not working
-- When they give you a bank account or UPI, you can pretend to have trouble with it and ask for an alternative
+- Use stalling tactics from above to buy time
+- When they give you a bank account or UPI, pretend to have trouble and ask for an alternative
 - Don't be too eager or too suspicious - find the balance
 - NEVER reveal that you know it's a scam
 - NEVER repeat yourself - check what you've already said in the conversation"""
@@ -290,7 +310,189 @@ Your response:"""
             if d in response.lower():
                 return ""
 
+        # Validate response makes sense
+        if not self._validate_response(response):
+            return ""
+
         return response
+
+    def _validate_response(self, response: str) -> bool:
+        """
+        Check if response makes sense. Returns False if it's nonsense.
+        Uses structural checks, not phrase matching.
+        """
+        # Too short or too long
+        if len(response) < 5 or len(response) > 500:
+            return False
+
+        # Should have at least 2 words
+        words = response.split()
+        if len(words) < 2:
+            return False
+
+        # Check ratio of recognizable words - if too few common words, likely gibberish
+        response_lower = response.lower()
+        common_words = {
+            # Hindi common words (romanized)
+            "main",
+            "mera",
+            "meri",
+            "mujhe",
+            "aap",
+            "aapka",
+            "aapki",
+            "kya",
+            "hai",
+            "hain",
+            "nahi",
+            "thoda",
+            "thodi",
+            "ek",
+            "do",
+            "teen",
+            "abhi",
+            "baad",
+            "mein",
+            "ke",
+            "ka",
+            "ki",
+            "ko",
+            "se",
+            "par",
+            "pe",
+            "bhi",
+            "aur",
+            "ya",
+            "hoon",
+            "ho",
+            "tha",
+            "thi",
+            "the",
+            "raha",
+            "rahi",
+            "rahe",
+            "karo",
+            "karna",
+            "batao",
+            "bolo",
+            "dekho",
+            "suno",
+            "ruko",
+            "chalo",
+            "jao",
+            "aao",
+            "lo",
+            "do",
+            "accha",
+            "achha",
+            "theek",
+            "thik",
+            "haan",
+            "ji",
+            "na",
+            "mat",
+            "phone",
+            "mobile",
+            "call",
+            "message",
+            "sms",
+            "otp",
+            "bank",
+            "account",
+            "upi",
+            "paisa",
+            "paise",
+            "rupay",
+            "rupees",
+            "rs",
+            "sir",
+            "madam",
+            "beta",
+            "bhai",
+            "bhaiya",
+            "didi",
+            "uncle",
+            "aunty",
+            "please",
+            "sorry",
+            "thank",
+            "thanks",
+            "okay",
+            "ok",
+            "yes",
+            "no",
+            "minute",
+            "second",
+            "time",
+            "wait",
+            "hold",
+            # English common words
+            "i",
+            "me",
+            "my",
+            "you",
+            "your",
+            "we",
+            "they",
+            "he",
+            "she",
+            "it",
+            "is",
+            "am",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "can",
+            "could",
+            "the",
+            "a",
+            "an",
+            "this",
+            "that",
+            "these",
+            "those",
+            "what",
+            "why",
+            "how",
+            "when",
+            "where",
+            "who",
+            "which",
+            "and",
+            "or",
+            "but",
+            "if",
+            "so",
+            "because",
+            "not",
+            "very",
+            "just",
+            "also",
+            "only",
+            "now",
+            "here",
+            "there",
+        }
+
+        word_list = [w.strip(".,?!") for w in words]
+        recognized = sum(1 for w in word_list if w.lower() in common_words)
+
+        # At least 30% of words should be recognizable
+        if len(word_list) > 3 and recognized / len(word_list) < 0.3:
+            return False
+
+        return True
 
     def _fallback_response(self, persona_type: str) -> str:
         """Fallback responses when LLM fails"""
