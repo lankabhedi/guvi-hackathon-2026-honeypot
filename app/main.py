@@ -35,8 +35,8 @@ app = FastAPI(title="Agentic Honey-Pot API - Intelligence Grade")
 API_KEY = os.getenv("API_KEY", "hackathon-api-key-2026")
 GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
 MAX_CONVERSATION_TURNS = 20
-STALE_TURN_LIMIT = 5  # End if no new intel for 5 turns
-INACTIVITY_TIMEOUT = 60  # End if no message for 60 seconds
+STALE_TURN_LIMIT = 3  # End if no new intel for 3 turns (Reduced from 5)
+INACTIVITY_TIMEOUT = 15  # End if no message for 15 seconds (Reduced from 60)
 
 # Initialize components
 detector = ScamDetector()
