@@ -354,20 +354,18 @@ CRITICAL RULES:
         """Update emotional state based on scammer input and extracted intel"""
         msg_lower = scammer_message.lower()
 
-        # HANDOFF LOGIC: Switch to "Son" if threat level is critical OR hive mind confirmed scam
-        # Only switch if we haven't already
+        # HANDOFF LOGIC: Switch to "Son" if threat level is critical
+        # Only switch if we haven't already AND scammer is making direct threats
         if not self.handoff_triggered:
             should_switch = False
 
-            # Condition 1: High Aggression/Threats
+            # Condition: High Aggression/Threats (only when in vulnerable mood)
             if any(
                 w in msg_lower for w in ["police", "jail", "arrest", "warrant"]
-            ) and self.current_mood in ["WORRIED", "ANXIOUS"]:
+            ) and self.current_mood in ["WORRIED", "ANXIOUS", "COOPERATIVE"]:
                 should_switch = True
 
-            # Condition 2: Hive Mind Match (It's a known scammer, let's confront them)
-            if hive_mind_alert:
-                should_switch = True
+            # Note: Hive Mind match no longer auto-switches - just adds suspicion via prompt
 
             if should_switch:
                 self.active_persona_key = "son"
@@ -774,6 +772,10 @@ Your response:"""
         return fallbacks.get(persona_type, "I'm not sure. Can you explain more?")
 
     def reset_mood(self):
-        """Reset mood for new conversation"""
+        """Reset mood and persona state for new conversation"""
         self.current_mood = "NEUTRAL"
         self.mood_history = []
+        self.handoff_triggered = False
+        self.active_persona_key = "elderly"
+        self.last_openers = []
+        self.steer_to_upi = False
