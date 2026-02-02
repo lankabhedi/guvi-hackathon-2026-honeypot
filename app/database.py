@@ -136,3 +136,61 @@ def save_conversation(
 
     conn.commit()
     conn.close()
+
+
+def check_hive_mind(entity_value: str, entity_type: str) -> Dict[str, Any]:
+    """Check if an entity exists in the global scammer database"""
+    conn = sqlite3.connect("honeypot.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT first_seen, sighting_count, risk_score FROM known_scammers WHERE value = ?",
+        (entity_value,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "found": True,
+            "first_seen": row[0],
+            "sighting_count": row[1],
+            "risk_score": row[2],
+        }
+    return {"found": False}
+
+
+def update_hive_mind(entity_value: str, entity_type: str):
+    """Add or update an entity in the global scammer database"""
+    conn = sqlite3.connect("honeypot.db")
+    cursor = conn.cursor()
+
+    # Check if exists
+    cursor.execute(
+        "SELECT id, sighting_count FROM known_scammers WHERE value = ?", (entity_value,)
+    )
+    row = cursor.fetchone()
+
+    if row:
+        # Update existing
+        new_count = row[1] + 1
+        cursor.execute(
+            """
+            UPDATE known_scammers 
+            SET sighting_count = ?, last_seen = ?, risk_score = risk_score + 0.1
+            WHERE id = ?
+            """,
+            (new_count, datetime.now(), row[0]),
+        )
+    else:
+        # Insert new
+        cursor.execute(
+            """
+            INSERT INTO known_scammers (value, type, first_seen, last_seen, sighting_count, risk_score)
+            VALUES (?, ?, ?, ?, 1, 0.5)
+            """,
+            (entity_value, entity_type, datetime.now(), datetime.now()),
+        )
+
+    conn.commit()
+    conn.close()
