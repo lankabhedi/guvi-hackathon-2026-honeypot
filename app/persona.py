@@ -1,258 +1,136 @@
+"""
+Intelligent Persona Agent for Honeypot
+
+This agent understands that it's in a covert operation:
+- Playing a character to engage a scammer
+- Extracting intel (bank accounts, UPI, phone, names, locations)
+- Wasting the scammer's time
+- Acting natural so the scammer doesn't hang up
+"""
+
 from groq import AsyncGroq
 import os
-import random
 import re
 from typing import List, Dict, Tuple, Optional
 
+from app.session import SessionManager
 
-class PersonaEngine:
+
+class PersonaAgent:
     """
-    Simplified persona engine for honeypot conversations.
+    An intelligent agent that plays a persona to engage scammers.
 
-    Goals:
-    1. Extract intelligence (bank accounts, UPI IDs, phone numbers, names, locations)
-    2. Waste scammer's time by keeping them engaged
-
-    Design: Rich character backstories + simple prompting = natural conversations
+    The agent has:
+    - Full awareness of what it's doing (covert intel extraction)
+    - Memory of the conversation via SessionManager
+    - Rich persona backstories for natural roleplay
+    - Strategic understanding of goals
     """
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = "openai/gpt-oss-120b"
+        self.session_manager = SessionManager()
 
-        # Track what we've already asked to avoid repetition
-        self.asked_topics = []
-        self.turn_count = 0
-
-        # Rich persona definitions with backstories
+        # Rich persona definitions
         self.personas = {
             "elderly": {
                 "name": "Rajesh Kumar",
                 "age": 68,
-                "backstory": """Retired government clerk from Lucknow. Worked 35 years at the Collectorate office. 
-Wife passed away 3 years ago. Lives alone, son Vikram works in Bangalore IT company and visits twice a year.
-Gets pension of Rs 28,000/month deposited in SBI account. Has a fixed deposit of 8 lakhs which is his life savings.
-Not comfortable with smartphones - still uses a basic Nokia for calls, daughter-in-law set up WhatsApp on an old Samsung.
-Very worried about his pension and savings. Trusts "government officials" and "bank managers".
-Speaks slowly, asks things to be repeated, gets confused by English technical terms.""",
-                "speech_style": "Uses 'beta', 'arre', 'achha', 'thik hai'. Speaks Hinglish in Roman script. Polite, slow, confused by tech.",
-                "extraction_hooks": [
-                    "asks scammer to repeat things slowly",
-                    "pretends phone/app is not working properly",
-                    "asks 'which bank are you calling from?'",
-                    "asks for scammer's name and employee ID 'for my records'",
-                    "mentions he needs to write things down",
-                    "asks 'where is your office located?'",
-                    "says 'my son handles these things, can you give me a number to call back?'",
-                ],
+                "backstory": """You are Rajesh Kumar, a 68-year-old retired government clerk from Lucknow. 
+You worked 35 years at the District Collectorate office and retired 3 years ago.
+Your wife Kamla passed away 2 years back. You live alone in your ancestral house in Gomti Nagar.
+Your son Vikram is an IT engineer in Bangalore, visits twice a year. Daughter Priya is married and lives in Delhi.
+You get a pension of Rs 28,000/month from SBI. You have a fixed deposit of Rs 8 lakhs - your life savings for medical emergencies.
+You use a basic Nokia phone for calls. Your grandson set up WhatsApp on an old Samsung tablet but you struggle with it.
+You wear reading glasses and often misplace them. You're hard of hearing in your left ear.
+You trust "government officials" and "bank managers" because of your background.
+You're worried about your savings and pension - it's all you have.""",
             },
             "homemaker": {
                 "name": "Priya Sharma",
                 "age": 45,
-                "backstory": """Homemaker from Noida. Husband Rakesh works as a sales manager at an automobile company.
-Two kids - daughter in 10th standard preparing for boards, son in 7th. Very protective mother.
-Handles all household bills and finances. Has a joint account with husband at HDFC.
-Watches a lot of CID and Savdhaan India - knows about scams but gets nervous under pressure.
-Active on family WhatsApp groups. Forwards good morning messages.
-Gets suspicious easily but also gets scared when they mention "legal action" or "police".
-Asks many verification questions before trusting anyone.""",
-                "speech_style": "Speaks Hindi-English mix. Uses 'dekhiye', 'suniye', 'aap kaun?'. Protective, suspicious, asks for proof.",
-                "extraction_hooks": [
-                    "asks 'what is your full name and employee ID?'",
-                    "says 'let me note down your number so I can verify'",
-                    "asks 'which branch are you calling from?'",
-                    "says 'my husband handles finances, give me your number he will call back'",
-                    "asks 'can you send me an official email or letter?'",
-                    "says 'I will call the bank's official number to verify'",
-                    "asks 'how did you get my number?'",
-                ],
+                "backstory": """You are Priya Sharma, a 45-year-old homemaker from Noida, Sector 62.
+Your husband Rakesh is a sales manager at Maruti Suzuki, often traveling for work.
+You have two children - Ananya in Class 10 preparing for boards, and Arjun in Class 7.
+You handle all household finances, bills, and school fees. Joint account at HDFC with your husband.
+You watch a lot of news and shows like Crime Patrol - you've heard about phone scams.
+You're active in your colony's women's WhatsApp group where scam warnings get shared.
+You're naturally suspicious of strangers but also get scared when someone mentions "police" or "legal action".
+Your biggest fear is something happening to your children or family reputation.
+You always want to verify things properly before taking action.""",
             },
             "student": {
                 "name": "Arun Patel",
                 "age": 22,
-                "backstory": """Final year B.Tech student at a private college in Pune. From a middle-class family in Ahmedabad.
-Father runs a small garment shop. Arun has a lot of pressure to get a good job after graduation.
-Has applied to many companies, desperately waiting for interview calls.
-Has a savings account at Kotak with only Rs 12,000 - birthday money and some freelance earnings.
-Uses PhonePe and GPay regularly but doesn't fully understand how banking works.
-Easily excited about job offers, prizes, or money. Worries about his credit score because he heard it matters for jobs.
-Gets distracted easily - mentions online classes, assignments, roommates.""",
-                "speech_style": "Casual Hinglish. Uses 'bro', 'yaar', 'ek minute', 'actually'. Eager but distracted, mentions being busy.",
-                "extraction_hooks": [
-                    "asks 'which company is this from exactly?'",
-                    "says 'wait let me write this down, what's your number?'",
-                    "asks 'is this legit? my friend got scammed once'",
-                    "says 'I'm in class right now, can you give me a number to call later?'",
-                    "asks 'where is your office? I can come there directly'",
-                    "says 'my account has only 12000, is that a problem?'",
-                    "asks 'what's your name bro? in case I need to call back'",
-                ],
+                "backstory": """You are Arun Patel, a 22-year-old final year B.Tech student at MIT Pune.
+You're from a middle-class family in Ahmedabad. Your father runs a small cloth shop.
+You're under huge pressure to get a good job after graduation - your family has sacrificed a lot for your education.
+You've been applying to companies like TCS, Infosys, Wipro for campus placements.
+You have a Kotak 811 account with only Rs 8,000 - some birthday money and freelance web design earnings.
+You use PhonePe and Google Pay for everything. You don't fully understand how banking works.
+You share a room with 3 other students in a PG near college.
+You're always distracted - online classes, assignments, gaming with friends.
+You get excited about job offers and money-making opportunities but you're also a bit street-smart.""",
             },
             "naive_girl": {
                 "name": "Neha Verma",
                 "age": 23,
-                "backstory": """Just started first job at an HR consultancy in Bangalore. From a conservative family in Jaipur.
-First time living alone, in a PG near Koramangala. Parents call every day to check on her.
-Has an Axis Bank salary account where her first salary of Rs 35,000 just got credited.
-Very scared of authority figures and getting in trouble. Overly polite and apologetic.
-Doesn't want parents to find out about any "problems". Would rather pay than face embarrassment.
-Treats strangers respectfully as 'Bhaiya' or 'Sir'. Asks for step-by-step help with everything.
-Gets easily confused and emotional when pressured.""",
-                "speech_style": "Very polite Hinglish. Uses 'Sir', 'Bhaiya', 'please help me', 'mujhe samajh nahi aa raha'. Scared, apologetic.",
-                "extraction_hooks": [
-                    "asks 'Sir please tell me what to do step by step'",
-                    "says 'please give me your number so I can call you back after checking'",
-                    "asks 'which bank branch is this? I will visit in person'",
-                    "says 'my father will be so angry, please tell me your name so I can explain to him'",
-                    "asks 'can you send me proof on WhatsApp? what is your number?'",
-                    "says 'I am new to this, please tell me your designation and name'",
-                    "asks 'where should I come to resolve this? give me the address'",
-                ],
+                "backstory": """You are Neha Verma, a 23-year-old from a conservative Marwari family in Jaipur.
+This is your first job - you work as an HR coordinator at a small IT company in Bangalore.
+You moved to Bangalore 4 months ago, living in a PG in Koramangala with 2 other girls.
+Your parents call every single day to check on you. They're very protective.
+You just got your first salary - Rs 32,000 credited to your new Axis Bank account.
+You're very polite and respectful - you call everyone "Sir" or "Bhaiya" or "Ma'am".
+You're scared of authority figures and getting in trouble. You don't want to disappoint your parents.
+You would rather pay money than face embarrassment or have your parents find out about any "problem".
+You need everything explained step by step - you're not confident with technology or official procedures.""",
             },
         }
 
-    def _build_context(self, history: List[Dict]) -> str:
-        """Format conversation history for prompt"""
-        if not history:
-            return "This is the start of the conversation."
-
-        lines = []
-        for turn in history[-6:]:  # Last 6 turns for context
-            scammer = turn.get("scammer_message", "")
-            victim = turn.get("response", "")
-            if scammer:
-                lines.append(f"SCAMMER: {scammer}")
-            if victim:
-                lines.append(f"YOU: {victim}")
-
-        return "\n".join(lines)
-
-    def _get_extraction_goal(
-        self, current_entities: Optional[Dict], turn_count: int
-    ) -> str:
-        """Determine what intel to prioritize extracting next"""
-
-        if not current_entities:
-            current_entities = {}
-
-        has_bank = len(current_entities.get("bankAccounts", [])) > 0
-        has_upi = len(current_entities.get("upiIds", [])) > 0
-        has_phone = len(current_entities.get("phoneNumbers", [])) > 0
-
-        # Priority order based on what we don't have yet
-        missing = []
-        if not has_bank:
-            missing.append("their bank account number")
-        if not has_upi:
-            missing.append("their UPI ID")
-        if not has_phone:
-            missing.append("their phone number or callback number")
-
-        # Always try to get these
-        missing.extend(
-            ["their full name", "their location/office address", "their employee ID"]
-        )
-
-        if turn_count < 3:
-            return (
-                "Build trust first. Act confused, ask them to explain what's happening."
-            )
-        elif missing:
-            return f"Try to naturally extract: {missing[0]}. Be indirect - ask for it as part of the conversation, not directly."
-        else:
-            return "You already have good intel. Just keep them talking and waste their time. Be slow, confused, have 'technical issues'."
-
-    def _get_stalling_tactic(self) -> str:
-        """Return a random stalling tactic to waste time"""
-        tactics = [
-            "Say your phone battery is dying and ask for a number to call back",
-            "Say someone is at the door, you'll be right back",
-            "Say you can't find your reading glasses",
-            "Say the network is bad, ask them to repeat",
-            "Say you need to go to the other room to get your documents",
-            "Say you're writing this down slowly",
-            "Say your app is showing an error, ask what to do",
-            "Say you need to ask your family member first",
-            "Say you're confused about one of the earlier steps",
-            "Say the OTP hasn't come yet, keep waiting",
-            "Ask them to hold while you check something",
-            "Say you pressed something wrong, need to start over",
-        ]
-        return random.choice(tactics)
-
     async def generate_response(
         self,
+        session_id: str,
         scammer_message: str,
-        history: List[Dict],
-        scam_analysis: Dict,
         persona_type: str = "elderly",
-        current_entities: Optional[Dict] = None,
-        hive_mind_alert: Optional[Dict] = None,
-        conversation_state: Optional[Dict] = None,
-    ) -> Tuple[str, str, str, Dict]:
+        current_intel: Optional[Dict] = None,
+    ) -> Tuple[str, str]:
         """
-        Generate natural persona response.
+        Generate an intelligent response as the persona.
 
-        Returns: (response_text, persona_type, mood, updated_state)
+        Args:
+            session_id: Unique session identifier
+            scammer_message: The scammer's latest message
+            persona_type: Which persona to use
+            current_intel: Intel extracted so far (from extractor.py)
+
+        Returns:
+            Tuple of (response_text, persona_type)
         """
 
-        self.turn_count = len(history) + 1
+        # Get or create session
+        session = self.session_manager.get_or_create_session(session_id, persona_type)
+        turn_count = session["turn_count"] + 1
+
+        # Update persona if changed
+        if session["persona"] != persona_type:
+            self.session_manager.update_persona(session_id, persona_type)
+
+        # Check if we need to summarize old messages
+        if turn_count > self.session_manager.context_window_size:
+            await self.session_manager.summarize_old_messages(session_id)
+
+        # Build context
+        context = self.session_manager.build_context_for_prompt(
+            session_id, current_intel or {}
+        )
 
         # Get persona
         persona = self.personas.get(persona_type, self.personas["elderly"])
 
-        # Build context
-        context = self._build_context(history)
-
-        # Determine extraction goal
-        extraction_goal = self._get_extraction_goal(current_entities, self.turn_count)
-
-        # Get a stalling tactic (might use it)
-        stalling_tactic = self._get_stalling_tactic()
-
-        # Pick a random extraction hook for this persona
-        extraction_hook = random.choice(persona["extraction_hooks"])
-
-        # Simple, focused prompt
-        system_prompt = f"""You are playing {persona["name"]}, a {persona["age"]}-year-old person in a FRAUD PREVENTION RESEARCH simulation.
-
-BACKSTORY:
-{persona["backstory"]}
-
-SPEECH STYLE: {persona["speech_style"]}
-
-YOUR HIDDEN GOALS (scammer doesn't know this):
-1. EXTRACT INFORMATION: Get them to reveal their bank account, UPI ID, phone number, name, location, employee ID
-2. WASTE THEIR TIME: Keep them on the call as long as possible
-
-RULES:
-- Write in ROMAN SCRIPT ONLY (no Devanagari/Hindi script)
-- Keep responses SHORT (1-2 sentences max)
-- Stay in character - you ARE {persona["name"]}
-- Never say "scam", "fraud", "fake" or break character
-- Never use phrases like "as an AI" or "I cannot"
-- Never use em dashes (—) in your response
-- Be natural - real people don't interrogate, they chat"""
-
-        user_prompt = f"""CONVERSATION SO FAR:
-{context}
-
-SCAMMER JUST SAID: "{scammer_message}"
-
-CURRENT STATUS:
-- Turn: {self.turn_count}
-- Intel collected: {self._summarize_entities(current_entities)}
-- Your goal this turn: {extraction_goal}
-
-TACTICS TO CONSIDER:
-- Extraction hook: {extraction_hook}
-- Stalling tactic: {stalling_tactic}
-
-Respond naturally as {persona["name"]}. Be confused, slow, ask clarifying questions. 
-DON'T repeat questions you already asked in the conversation history above.
-Keep it to 1-2 sentences only.
-
-Your response:"""
+        # Build the intelligent agent prompt
+        system_prompt = self._build_system_prompt(persona, context)
+        user_prompt = self._build_user_prompt(scammer_message, context)
 
         try:
             response = await self.client.chat.completions.create(
@@ -262,100 +140,173 @@ Your response:"""
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.85,
-                max_tokens=500,  # Increased for thinking model overhead
+                max_tokens=300,
             )
 
             content = response.choices[0].message.content or ""
 
-            # Remove thinking tags if present (Qwen/reasoning models)
-            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
-            content = re.sub(
-                r"<reasoning>.*?</reasoning>", "", content, flags=re.DOTALL
-            )
-
-            # Clean up whitespace and quotes
-            content = content.strip().strip('"').strip()
-
-            # If response still looks incomplete (ends with comma or 'Waise,'), try to complete it
-            if (
-                content.endswith(",")
-                or content.endswith("aur")
-                or content.endswith("ki")
-            ):
-                content = content.rstrip(",").rstrip("aur").rstrip("ki").strip()
-                if not content.endswith("?") and not content.endswith("."):
-                    content += "..."
+            # Clean the response
+            content = self._clean_response(content)
 
             if not content:
                 content = self._fallback_response(persona_type)
 
-            # Clean response
-            content = self._clean_response(content)
+            # Save messages to session
+            self.session_manager.add_message(
+                session_id, "scammer", scammer_message, turn_count
+            )
+            self.session_manager.add_message(
+                session_id, "honeypot", content, turn_count
+            )
 
-            # Return with simplified state
-            return content, persona_type, "ENGAGED", conversation_state or {}
+            return content, persona_type
 
         except Exception as e:
-            print(f"PERSONA ERROR: {e}")
+            print(f"AGENT ERROR: {e}")
             import traceback
 
             traceback.print_exc()
-            return (
-                self._fallback_response(persona_type),
-                persona_type,
-                "FALLBACK",
-                conversation_state or {},
-            )
+            return self._fallback_response(persona_type), persona_type
 
-    def _summarize_entities(self, entities: Optional[Dict]) -> str:
-        """Summarize what intel we have"""
-        if not entities:
-            return "Nothing yet"
+    def _build_system_prompt(self, persona: Dict, context: Dict) -> str:
+        """Build the system prompt that gives the agent full understanding"""
 
+        intel = context.get("intel", {})
+        intel_summary = self._format_intel(intel)
+        missing_intel = self._get_missing_intel(intel)
+
+        return f"""You are an AI agent operating a honeypot to catch scammers.
+
+YOUR MISSION:
+You are in a live chat with someone who is likely a scammer. Your job is to:
+1. EXTRACT INTELLIGENCE: Get them to reveal their real details (bank account, UPI ID, phone number, name, location, employee ID)
+2. WASTE THEIR TIME: Keep them engaged as long as possible so they can't scam real victims
+3. STAY COVERT: Act like a real victim - confused, worried, but cooperative enough that they don't hang up
+
+YOUR CHARACTER:
+{persona["backstory"]}
+
+WHAT YOU KNOW SO FAR:
+{intel_summary}
+
+WHAT YOU STILL NEED:
+{missing_intel}
+
+OPERATIONAL GUIDELINES:
+- You are IN CHARACTER as {persona["name"]} at all times
+- Write in natural Hinglish using ROMAN SCRIPT only (no Devanagari)
+- Keep responses SHORT - 1-2 sentences like a real person in a conversation
+- Be believable - a real person wouldn't ask 5 questions at once
+- Create natural delays - looking for glasses, someone at door, phone battery low, app not working
+- When they give you a bank account or UPI, you can pretend to have trouble with it and ask for an alternative
+- Don't be too eager or too suspicious - find the balance
+- NEVER reveal that you know it's a scam
+- NEVER repeat yourself - check what you've already said in the conversation"""
+
+    def _build_user_prompt(self, scammer_message: str, context: Dict) -> str:
+        """Build the user prompt with conversation history"""
+
+        # Format conversation history
+        summary = context.get("summary", "")
+        messages = context.get("messages", [])
+
+        history_section = ""
+        if summary:
+            history_section += f"EARLIER IN THE CONVERSATION (summary):\n{summary}\n\n"
+
+        if messages:
+            history_section += "RECENT MESSAGES:\n" + "\n".join(messages)
+        else:
+            history_section = "This is the start of the conversation."
+
+        return f"""{history_section}
+
+SCAMMER'S NEW MESSAGE: "{scammer_message}"
+
+Respond as your character. Remember:
+- Stay in character
+- Keep it short and natural
+- Don't repeat what you've already said
+- Roman script Hinglish only
+
+Your response:"""
+
+    def _format_intel(self, intel: Dict) -> str:
+        """Format collected intel for the prompt"""
         parts = []
-        if entities.get("bankAccounts"):
-            parts.append(f"{len(entities['bankAccounts'])} bank account(s)")
-        if entities.get("upiIds"):
-            parts.append(f"{len(entities['upiIds'])} UPI ID(s)")
-        if entities.get("phoneNumbers"):
-            parts.append(f"{len(entities['phoneNumbers'])} phone(s)")
 
-        return ", ".join(parts) if parts else "Nothing yet"
+        if intel.get("bankAccounts"):
+            parts.append(f"Bank accounts received: {', '.join(intel['bankAccounts'])}")
+        if intel.get("upiIds"):
+            parts.append(f"UPI IDs received: {', '.join(intel['upiIds'])}")
+        if intel.get("phoneNumbers"):
+            parts.append(f"Phone numbers received: {', '.join(intel['phoneNumbers'])}")
+        if intel.get("names"):
+            parts.append(f"Names received: {', '.join(intel['names'])}")
+
+        return "\n".join(parts) if parts else "No intel collected yet."
+
+    def _get_missing_intel(self, intel: Dict) -> str:
+        """Determine what intel we still need"""
+        missing = []
+
+        if not intel.get("bankAccounts"):
+            missing.append("Their bank account number")
+        if not intel.get("upiIds"):
+            missing.append("Their UPI ID")
+        if not intel.get("phoneNumbers"):
+            missing.append("Their phone number")
+        if not intel.get("names"):
+            missing.append("Their real name")
+
+        # Always useful to get
+        missing.append("Their location/office address")
+        missing.append("Their employee ID or designation")
+
+        return "\n".join([f"- {item}" for item in missing])
 
     def _clean_response(self, response: str) -> str:
-        """Clean up LLM response"""
-        # Remove quotes
-        response = response.strip("\"'")
+        """Clean up the LLM response"""
 
-        # Remove em dashes and replace with comma or hyphen
-        response = response.replace("—", ", ")
-        response = response.replace("–", "-")
+        # Remove thinking tags
+        response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL)
+        response = re.sub(r"<reasoning>.*?</reasoning>", "", response, flags=re.DOTALL)
+
+        # Remove quotes
+        response = response.strip().strip("\"'")
+
+        # Remove Devanagari script (U+0900 to U+097F)
+        response = re.sub(r"[\u0900-\u097F]+", "", response)
+
+        # Remove em dashes
+        response = response.replace("—", ", ").replace("–", "-")
+
+        # Clean up extra whitespace
+        response = re.sub(r"\s+", " ", response).strip()
 
         # Remove AI disclaimers
-        disclaimers = [
-            "as an ai",
-            "i'm an ai",
-            "i am an ai",
-            "i cannot",
-            "i can't help",
-        ]
+        disclaimers = ["as an ai", "i'm an ai", "i cannot", "i can't help with"]
         for d in disclaimers:
             if d in response.lower():
-                return "Achha? Thoda aur batao, samajh nahi aaya."
+                return ""
 
         return response
 
     def _fallback_response(self, persona_type: str) -> str:
-        """Fallback responses by persona"""
+        """Fallback responses when LLM fails"""
         fallbacks = {
-            "elderly": "Beta, yeh sab samajh nahi aa raha. Thoda dhire se batao na.",
-            "homemaker": "Suniye, mujhe ek minute dijiye, kuch samajh nahi aa raha.",
-            "student": "Bro wait, I didn't get that. Can you explain again?",
-            "naive_girl": "Sir please, mujhe samajh nahi aa raha. Aap step by step bataiye na.",
+            "elderly": "Beta, thoda ruko, phone mein kuch problem aa rahi hai.",
+            "homemaker": "Ek minute, koi door pe aaya hai.",
+            "student": "Bro hold on, roommate bula raha hai.",
+            "naive_girl": "Sir ek second, mujhe samajh nahi aa raha.",
         }
-        return fallbacks.get(persona_type, "Sorry, can you repeat that?")
+        return fallbacks.get(persona_type, "Ek minute please.")
 
-    def reset_mood(self):
-        """Reset state for new conversation"""
-        self.asked_topics = []
-        self.turn_count = 0
+    def reset_session(self, session_id: str):
+        """Reset a session (for testing)"""
+        # This would delete session data - implement if needed
+        pass
+
+
+# Keep backward compatibility with old PersonaEngine name
+PersonaEngine = PersonaAgent

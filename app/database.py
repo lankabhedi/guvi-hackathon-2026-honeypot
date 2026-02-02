@@ -44,6 +44,31 @@ def init_db():
         )
     """)
 
+    # Session context tables for the intelligent agent
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS session_context (
+            session_id TEXT PRIMARY KEY,
+            persona TEXT,
+            summary TEXT DEFAULT '',
+            memory TEXT DEFAULT '{}',
+            turn_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS session_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            role TEXT,
+            content TEXT,
+            turn_number INTEGER,
+            timestamp TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES session_context(session_id)
+        )
+    """)
+
     conn.commit()
     conn.close()
 

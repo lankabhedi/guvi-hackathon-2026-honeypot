@@ -308,15 +308,8 @@ async def honeypot_endpoint(
             },
             "scam_type": None,
             "persona_type": "elderly",  # Default
-            "persona_mood": "NEUTRAL",
             "conversation_ended": False,
-            # Conversation state for coherent multi-turn dialogue
-            "conversation_state": {
-                "current_strategy": "BUILD_TRUST",
-                "threat_detected": False,
-            },
         }
-        persona.reset_mood()
 
     session_info = session_data[session_id]
     session_info["message_count"] += 1
@@ -400,25 +393,16 @@ async def honeypot_endpoint(
         if value and value not in session_info["extracted_entities"]["amounts"]:
             session_info["extracted_entities"]["amounts"].append(value)
 
-    # PHASE 3: Generate Persona Response
-    (
-        response_text,
-        persona_id,
-        current_mood,
-        updated_state,
-    ) = await persona.generate_response(
+    # PHASE 3: Generate Persona Response using the intelligent agent
+    response_text, persona_id = await persona.generate_response(
+        session_id,
         scammer_message,
-        history,
-        scam_analysis,
         active_persona,
         session_info["extracted_entities"],
-        hive_mind_alert,
-        session_info["conversation_state"],
     )
 
-    # Update conversation state
-    session_info["conversation_state"] = updated_state
-    session_info["persona_mood"] = current_mood
+    # For backward compatibility with background tasks
+    current_mood = "ENGAGED"
 
     # PHASE 4: Background Processing (Lifecycle & Callback)
     # This prevents the API from timing out while doing heavy analysis/reporting
