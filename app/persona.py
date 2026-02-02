@@ -14,6 +14,7 @@ class PersonaEngine:
         self.model = "llama-3.1-8b-instant"
         self.current_mood = "NEUTRAL"
         self.mood_history = []
+        self.last_openers = []  # Track last 3 opening words
         self.steer_to_upi = False
         self.active_persona_key = "elderly"  # Track active persona
         self.handoff_triggered = False
@@ -234,6 +235,15 @@ class PersonaEngine:
             # Clean up response
             response_text = self._clean_response(response_text)
 
+            # Track openers to prevent repetition
+            try:
+                first_word = response_text.split(" ")[0].strip(",").strip()
+                self.last_openers.append(first_word)
+                if len(self.last_openers) > 3:
+                    self.last_openers.pop(0)
+            except:
+                pass
+
             return response_text, persona_type, self.current_mood
 
         except Exception as e:
@@ -406,17 +416,17 @@ class PersonaEngine:
         if any(
             w in msg_lower for w in ["send", "pay", "transfer", "deposit"]
         ) and self.current_mood not in ["BLACK_OPS_JEALOUSY", "BLACK_OPS_REVERSE"]:
-            # 20% chance to trigger Jealousy to keep it unpredictable
+            # INCREASED PROBABILITY: 40% chance (was 20%) to trigger Jealousy
             import random
 
-            if random.random() < 0.2:
+            if random.random() < 0.4:
                 triggers.append("trigger_jealousy")
 
         # 3. Bank Fishing: If they mention a specific bank
         if any(
             w in msg_lower for w in ["sbi", "hdfc", "icici", "axis", "kotak", "pnb"]
         ) and self.current_mood not in ["BLACK_OPS_BANK_FISH"]:
-            # If we are in "Fake Error" mode, switch to fishing
+            # Always trigger fishing if bank is mentioned in Fake Error mode
             if self.current_mood == "FAKE_ERROR":
                 triggers.append("trigger_bank_fish")
 
@@ -496,6 +506,27 @@ class PersonaEngine:
         identity_instruction = ""
         speech_instruction = ""
 
+        # Style Injection (Random Vibe)
+        import random
+
+        styles = [
+            "Be slightly irritated.",
+            "Be very slow and confused.",
+            "Be apologetic.",
+            "Be suspicious but polite.",
+            "Sound distracted.",
+            "Be eager to finish.",
+        ]
+        style_vibe = random.choice(styles)
+
+        # Anti-Repetition Logic
+        banned_openers = ", ".join([f"'{w}'" for w in self.last_openers[-3:]])
+        anti_repeat_instruction = (
+            f"Do NOT start your sentence with: {banned_openers}."
+            if banned_openers
+            else ""
+        )
+
         if persona["name"] == "Vikram Kumar":  # The Son
             identity_instruction = "IMPORTANT: You have just taken the phone from your father (Rajesh). The previous 'You' messages in history were sent by HIM. You are now VIKRAM. Do NOT act like an old man."
             speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding."
@@ -505,7 +536,7 @@ class PersonaEngine:
                 "Speak confidently and manipulatively. You are in control."
             )
         elif persona["name"] == "Rajesh Kumar":  # The Elderly
-            speech_instruction = "Use natural Hinglish (Hindi+English). Vary your starters (don't always say 'Arre beta'). Use words like 'Beta', 'Bhaiya', 'Suniyega', 'Acha'. Typos are good."
+            speech_instruction = f"Use natural Hinglish. {style_vibe} Vary your starters. {anti_repeat_instruction}"
         else:
             speech_instruction = "Speak naturally. Use occasional Hinglish fillers."
 
