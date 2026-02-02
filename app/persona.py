@@ -231,6 +231,7 @@ RULES:
 - Stay in character - you ARE {persona["name"]}
 - Never say "scam", "fraud", "fake" or break character
 - Never use phrases like "as an AI" or "I cannot"
+- Never use em dashes (—) in your response
 - Be natural - real people don't interrogate, they chat"""
 
         user_prompt = f"""CONVERSATION SO FAR:
@@ -325,6 +326,10 @@ Your response:"""
         """Clean up LLM response"""
         # Remove quotes
         response = response.strip("\"'")
+
+        # Remove em dashes and replace with comma or hyphen
+        response = response.replace("—", ", ")
+        response = response.replace("–", "-")
 
         # Remove AI disclaimers
         disclaimers = [
