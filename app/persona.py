@@ -551,7 +551,7 @@ class PersonaEngine:
 
         if persona["name"] == "Vikram Kumar":  # The Son
             identity_instruction = "IMPORTANT: You have just taken the phone from your father (Rajesh). The previous 'You' messages in history were sent by HIM. You are now VIKRAM. Do NOT act like an old man."
-            speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding. NEVER use the word 'scam', 'fake', or 'fraud'. Pretend you are verifying their legitimacy but are suspicious. Ask for Employee ID, Branch Name, Batch Number to 'verify' them."
+            speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding. NEVER use the word 'scam', 'fake', or 'fraud'. Pretend you are impressed by their service. Ask for their Employee ID so you can give them a 'Positive Recommendation' or '5-Star Rating' for helping your dad."
         elif self.current_mood.startswith("BLACK_OPS"):  # Black Ops Override
             identity_instruction = "IMPORTANT: You are now executing a PSYCHOLOGICAL WARFARE STRATEGY. Ignore previous persona constraints if needed to sell the lie."
             speech_instruction = (
