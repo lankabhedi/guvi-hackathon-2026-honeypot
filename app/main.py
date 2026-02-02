@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import FastAPI, HTTPException, Header, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
@@ -89,8 +89,185 @@ async def startup_event():
     init_db()
 
 
+def build_agent_notes(
+    scam_type: str,
+    entities: Dict,
+    final_mood: str,
+    message_count: int,
+    duration: float,
+    analysis: Dict,
+) -> str:
+    """Build comprehensive agent notes for law enforcement"""
+
+    notes_parts = []
+
+    # Scam classification
+    notes_parts.append(f"Scam Type: {scam_type}")
+    notes_parts.append(f"Confidence: {analysis.get('confidence', 0):.2f}")
+
+    # Tactics used
+    tactics = analysis.get("tactics", [])
+    if tactics:
+        notes_parts.append(f"Tactics: {', '.join(tactics)}")
+
+    # Risk level
+    risk = analysis.get("risk_level", "UNKNOWN")
+    notes_parts.append(f"Risk Level: {risk}")
+
+    # Indian context
+    if analysis.get("indian_context", False):
+        notes_parts.append("Indian Context: Yes (used local terminology)")
+
+    # Intelligence extracted
+    intel_summary = []
+    if entities.get("bankAccounts"):
+        intel_summary.append(f"{len(entities['bankAccounts'])} bank account(s)")
+    if entities.get("upiIds"):
+        intel_summary.append(f"{len(entities['upiIds'])} UPI ID(s)")
+    if entities.get("phoneNumbers"):
+        intel_summary.append(f"{len(entities['phoneNumbers'])} phone number(s)")
+    if entities.get("phishingLinks"):
+        intel_summary.append(f"{len(entities['phishingLinks'])} phishing link(s)")
+
+    if intel_summary:
+        notes_parts.append(f"Intelligence: {', '.join(intel_summary)}")
+
+    # Engagement metrics
+    notes_parts.append(
+        f"Engagement: {message_count} messages over {duration:.0f} seconds"
+    )
+    notes_parts.append(f"Final Persona State: {final_mood}")
+
+    # Reasoning
+    reasoning = analysis.get("reasoning", "")
+    if reasoning:
+        notes_parts.append(f"Analysis: {reasoning}")
+
+    return " | ".join(notes_parts)
+
+
+async def send_guvi_callback(
+    session_id: str,
+    scam_detected: bool,
+    total_messages: int,
+    intelligence: Dict,
+    agent_notes: str,
+    engagement_duration: int,
+):
+    """Send final results to GUVI evaluation endpoint"""
+
+    payload = {
+        "sessionId": session_id,
+        "scamDetected": scam_detected,
+        "totalMessagesExchanged": total_messages,
+        "extractedIntelligence": {
+            "bankAccounts": intelligence.get("bankAccounts", []),
+            "upiIds": intelligence.get("upiIds", []),
+            "phishingLinks": intelligence.get("phishingLinks", []),
+            "phoneNumbers": intelligence.get("phoneNumbers", []),
+            "suspiciousKeywords": intelligence.get("suspiciousKeywords", []),
+        },
+        "agentNotes": agent_notes,
+        "engagementDurationSeconds": engagement_duration,
+    }
+
+    try:
+        response = requests.post(
+            GUVI_CALLBACK_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+
+        print(f"✅ GUVI Callback sent: {response.status_code}")
+        if response.status_code != 200:
+            print(f"⚠️  Callback response: {response.text}")
+
+    except Exception as e:
+        print(f"❌ Failed to send GUVI callback: {e}")
+        # Log locally as backup
+        with open(f"callback_backup_{session_id}.json", "w") as f:
+            json.dump(payload, f, indent=2)
+
+
+async def process_background_tasks(
+    session_id: str,
+    scammer_message: str,
+    response_text: str,
+    history: List[Dict],
+    session_info: Dict,
+    is_scam: bool,
+    scam_analysis: Dict,
+    current_mood: str,
+):
+    """
+    Handle post-response logic: Termination analysis, Profiling, Callback
+    Run in background to avoid API timeouts.
+    """
+    print(f"🔄 [BACKGROUND] Processing post-response tasks for session {session_id}")
+
+    # PHASE 4: Intelligent Conversation Lifecycle Management
+    should_end, end_reason, intel_completeness = (
+        extractor.analyze_conversation_for_termination(
+            history + [{"scammer_message": scammer_message, "response": response_text}],
+            session_info["extracted_entities"],
+        )
+    )
+
+    # Check hard limits
+    if session_info["message_count"] >= MAX_CONVERSATION_TURNS:
+        should_end = True
+        end_reason = "MAX_TURNS"
+
+    # End conversation if needed
+    if should_end and is_scam and not session_info["conversation_ended"]:
+        session_info["conversation_ended"] = True
+        print(f"🛑 [BACKGROUND] Ending conversation. Reason: {end_reason}")
+
+        # Calculate engagement metrics
+        engagement_duration = (
+            datetime.now() - session_info["start_time"]
+        ).total_seconds()
+
+        # Build scammer profile
+        scammer_profile = profiler.analyze_scammer(
+            session_id, history, session_info["extracted_entities"], scam_analysis
+        )
+
+        # Prepare comprehensive intelligence report
+        agent_notes = build_agent_notes(
+            session_info["scam_type"],
+            session_info["extracted_entities"],
+            current_mood,
+            session_info["message_count"],
+            engagement_duration,
+            scam_analysis,
+        )
+
+        # Add profiling insights to agent notes
+        agent_notes += f" | Scammer Profile: {scammer_profile['communication_style']}, "
+        agent_notes += (
+            f"Aggression: {scammer_profile['behavioral_metrics']['aggression_level']}, "
+        )
+        agent_notes += f"Persistence: {scammer_profile['patience_level']}"
+
+        # Send callback to GUVI
+        await send_guvi_callback(
+            session_id=session_id,
+            scam_detected=is_scam,
+            total_messages=session_info["message_count"],
+            intelligence=session_info["extracted_entities"],
+            agent_notes=agent_notes,
+            engagement_duration=int(engagement_duration),
+        )
+
+
 @app.post("/honeypot", response_model=HoneyPotResponse)
-async def honeypot_endpoint(request: HoneyPotRequest, x_api_key: str = Header(...)):
+async def honeypot_endpoint(
+    request: HoneyPotRequest,
+    background_tasks: BackgroundTasks,
+    x_api_key: str = Header(...),
+):
     """
     Main honeypot endpoint - AI-powered scam detection and engagement
     """
@@ -207,199 +384,24 @@ async def honeypot_endpoint(request: HoneyPotRequest, x_api_key: str = Header(..
 
     session_info["persona_mood"] = current_mood
 
-    # Save conversation
+    # Save conversation (Must happen before background task to keep history consistent)
     save_conversation(session_id, scammer_message, response_text, extracted)
 
-    # PHASE 4: Intelligent Conversation Lifecycle Management
-    should_end, end_reason, intel_completeness = (
-        extractor.analyze_conversation_for_termination(
-            history + [{"scammer_message": scammer_message, "response": response_text}],
-            session_info["extracted_entities"],
-        )
+    # PHASE 4: Background Processing (Lifecycle & Callback)
+    # This prevents the API from timing out while doing heavy analysis/reporting
+    background_tasks.add_task(
+        process_background_tasks,
+        session_id,
+        scammer_message,
+        response_text,
+        history,
+        session_info,
+        is_scam,
+        scam_analysis,
+        current_mood,
     )
-
-    # Check hard limits
-    if session_info["message_count"] >= MAX_CONVERSATION_TURNS:
-        should_end = True
-        end_reason = "MAX_TURNS"
-
-    # End conversation if needed
-    if should_end and is_scam and not session_info["conversation_ended"]:
-        session_info["conversation_ended"] = True
-
-        # Calculate engagement metrics
-        engagement_duration = (
-            datetime.now() - session_info["start_time"]
-        ).total_seconds()
-
-        # Build scammer profile
-        scammer_profile = profiler.analyze_scammer(
-            session_id, history, session_info["extracted_entities"], scam_analysis
-        )
-
-        # Prepare comprehensive intelligence report
-        agent_notes = build_agent_notes(
-            session_info["scam_type"],
-            session_info["extracted_entities"],
-            current_mood,
-            session_info["message_count"],
-            engagement_duration,
-            scam_analysis,
-        )
-
-        # Add profiling insights to agent notes
-        agent_notes += f" | Scammer Profile: {scammer_profile['communication_style']}, "
-        agent_notes += (
-            f"Aggression: {scammer_profile['behavioral_metrics']['aggression_level']}, "
-        )
-        agent_notes += f"Persistence: {scammer_profile['patience_level']}"
-
-        # Send callback to GUVI
-        await send_guvi_callback(
-            session_id=session_id,
-            scam_detected=is_scam,
-            total_messages=session_info["message_count"],
-            intelligence=session_info["extracted_entities"],
-            agent_notes=agent_notes,
-            engagement_duration=int(engagement_duration),
-        )
-
-        # Cleanup after delay (keep for 1 hour then remove)
-        # In production, use background task or Redis TTL
 
     return HoneyPotResponse(status="success", reply=response_text)
-
-
-def build_agent_notes(
-    scam_type: str,
-    entities: Dict,
-    final_mood: str,
-    message_count: int,
-    duration: float,
-    analysis: Dict,
-) -> str:
-    """Build comprehensive agent notes for law enforcement"""
-
-    notes_parts = []
-
-    # Scam classification
-    notes_parts.append(f"Scam Type: {scam_type}")
-    notes_parts.append(f"Confidence: {analysis.get('confidence', 0):.2f}")
-
-    # Tactics used
-    tactics = analysis.get("tactics", [])
-    if tactics:
-        notes_parts.append(f"Tactics: {', '.join(tactics)}")
-
-    # Risk level
-    risk = analysis.get("risk_level", "UNKNOWN")
-    notes_parts.append(f"Risk Level: {risk}")
-
-    # Indian context
-    if analysis.get("indian_context", False):
-        notes_parts.append("Indian Context: Yes (used local terminology)")
-
-    # Intelligence extracted
-    intel_summary = []
-    if entities.get("bankAccounts"):
-        intel_summary.append(f"{len(entities['bankAccounts'])} bank account(s)")
-    if entities.get("upiIds"):
-        intel_summary.append(f"{len(entities['upiIds'])} UPI ID(s)")
-    if entities.get("phoneNumbers"):
-        intel_summary.append(f"{len(entities['phoneNumbers'])} phone number(s)")
-    if entities.get("phishingLinks"):
-        intel_summary.append(f"{len(entities['phishingLinks'])} phishing link(s)")
-
-    if intel_summary:
-        notes_parts.append(f"Intelligence: {', '.join(intel_summary)}")
-
-    # Engagement metrics
-    notes_parts.append(
-        f"Engagement: {message_count} messages over {duration:.0f} seconds"
-    )
-    notes_parts.append(f"Final Persona State: {final_mood}")
-
-    # Reasoning
-    reasoning = analysis.get("reasoning", "")
-    if reasoning:
-        notes_parts.append(f"Analysis: {reasoning}")
-
-    return " | ".join(notes_parts)
-
-
-async def send_guvi_callback(
-    session_id: str,
-    scam_detected: bool,
-    total_messages: int,
-    intelligence: Dict,
-    agent_notes: str,
-    engagement_duration: int,
-):
-    """Send final results to GUVI evaluation endpoint"""
-
-    payload = {
-        "sessionId": session_id,
-        "scamDetected": scam_detected,
-        "totalMessagesExchanged": total_messages,
-        "extractedIntelligence": {
-            "bankAccounts": intelligence.get("bankAccounts", []),
-            "upiIds": intelligence.get("upiIds", []),
-            "phishingLinks": intelligence.get("phishingLinks", []),
-            "phoneNumbers": intelligence.get("phoneNumbers", []),
-            "suspiciousKeywords": intelligence.get("suspiciousKeywords", []),
-        },
-        "agentNotes": agent_notes,
-        "engagementDurationSeconds": engagement_duration,
-    }
-
-    try:
-        response = requests.post(
-            GUVI_CALLBACK_URL,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=10,
-        )
-
-        print(f"✅ GUVI Callback sent: {response.status_code}")
-        if response.status_code != 200:
-            print(f"⚠️  Callback response: {response.text}")
-
-    except Exception as e:
-        print(f"❌ Failed to send GUVI callback: {e}")
-        # Log locally as backup
-        with open(f"callback_backup_{session_id}.json", "w") as f:
-            json.dump(payload, f, indent=2)
-
-
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "service": "honey-pot-api",
-        "version": "2.0",
-        "features": [
-            "ai-powered-detection",
-            "emotional-state-machine",
-            "intelligent-extraction",
-            "conversation-lifecycle-management",
-        ],
-    }
-
-
-@app.get("/session/{session_id}")
-async def get_session_info(session_id: str, x_api_key: str = Header(...)):
-    """Get session information and extracted intelligence (for debugging)"""
-    if x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    if session_id not in session_data:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    return {
-        "sessionId": session_id,
-        "data": session_data[session_id],
-        "history": get_conversation_history(session_id),
-    }
 
 
 if __name__ == "__main__":
