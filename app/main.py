@@ -91,6 +91,12 @@ async def startup_event():
     init_db()
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "agentic-honeypot"}
+
+
 def build_agent_notes(
     scam_type: str,
     entities: Dict,
