@@ -141,9 +141,12 @@ You need everything explained step by step.""",
         # Get persona
         persona = self.personas.get(persona_type, self.personas["elderly"])
 
+        # Detect language style of scammer's message
+        language_style = self._detect_language_style(scammer_message)
+
         # Build the intelligent agent prompt
-        system_prompt = self._build_system_prompt(persona, context)
-        user_prompt = self._build_user_prompt(scammer_message, context)
+        system_prompt = self._build_system_prompt(persona, context, language_style)
+        user_prompt = self._build_user_prompt(scammer_message, context, language_style)
 
         try:
             response = await self.client.chat.completions.create(
@@ -181,7 +184,125 @@ You need everything explained step by step.""",
             traceback.print_exc()
             return self._fallback_response(persona_type), persona_type
 
-    def _build_system_prompt(self, persona: Dict, context: Dict) -> str:
+    def _detect_language_style(self, message: str) -> str:
+        """
+        Detect if scammer is speaking English, Hindi, or Hinglish.
+        Returns: 'english' or 'hinglish'
+        """
+        message_lower = message.lower()
+        words = message_lower.split()
+
+        # Hindi-specific words (not common in pure English)
+        hindi_words = {
+            "aap",
+            "aapka",
+            "aapki",
+            "hai",
+            "hain",
+            "nahi",
+            "kya",
+            "kaise",
+            "kyun",
+            "mera",
+            "meri",
+            "mujhe",
+            "tumhara",
+            "tumhari",
+            "humara",
+            "unka",
+            "abhi",
+            "turant",
+            "jaldi",
+            "kripya",
+            "dhanyawad",
+            "shukriya",
+            "rupay",
+            "paise",
+            "paisa",
+            "lakh",
+            "crore",
+            "hazaar",
+            "bhai",
+            "bhaiya",
+            "didi",
+            "ji",
+            "sahab",
+            "karo",
+            "karna",
+            "karenge",
+            "karega",
+            "karegi",
+            "dijiye",
+            "dena",
+            "lena",
+            "batao",
+            "bataiye",
+            "bolo",
+            "boliye",
+            "suno",
+            "suniye",
+            "khata",
+            "bhejo",
+            "bhejiye",
+            "warna",
+            "toh",
+            "aur",
+            "ya",
+            "lekin",
+            "par",
+            "mein",
+            "pe",
+            "se",
+            "ko",
+            "bahut",
+            "thoda",
+            "jyada",
+            "kam",
+            "sab",
+            "kuch",
+            "kaun",
+            "kahan",
+            "kab",
+            "ho",
+            "hoon",
+            "tha",
+            "thi",
+            "the",
+            "raha",
+            "rahi",
+            "rahe",
+            "gaya",
+            "gayi",
+            "gaye",
+            "achha",
+            "accha",
+            "theek",
+            "thik",
+            "haan",
+            "na",
+            "mat",
+            "ruko",
+            "dekho",
+        }
+
+        # Count Hindi words
+        hindi_count = sum(1 for w in words if w.strip(".,?!") in hindi_words)
+        total_words = len(words)
+
+        if total_words == 0:
+            return "english"
+
+        hindi_ratio = hindi_count / total_words
+
+        # If more than 15% Hindi words, it's Hinglish
+        if hindi_ratio > 0.15:
+            return "hinglish"
+        else:
+            return "english"
+
+    def _build_system_prompt(
+        self, persona: Dict, context: Dict, language_style: str = "hinglish"
+    ) -> str:
         """Build the system prompt that gives the agent full understanding"""
 
         intel = context.get("intel", {})
@@ -200,6 +321,12 @@ You need everything explained step by step.""",
         emotional_triggers = persona.get(
             "emotional_triggers", "React naturally to the situation."
         )
+
+        # Language style instruction
+        if language_style == "english":
+            language_instruction = "The scammer is speaking in ENGLISH. Respond in ENGLISH only. Do not use Hindi words unless they do first."
+        else:
+            language_instruction = "The scammer is using Hinglish. You can respond in natural Hinglish (Roman script only, no Devanagari)."
 
         return f"""You are an AI agent operating a honeypot to catch scammers.
 
@@ -226,15 +353,20 @@ WHAT YOU STILL NEED:
 STALLING TACTICS (use naturally):
 {stall_examples_text}
 
+LANGUAGE:
+{language_instruction}
+
 RULES:
 - You ARE {persona["name"]} - stay in character
 - React emotionally to threats, emergencies, blackmail - then ask questions
-- Write in natural Hinglish using ROMAN SCRIPT only (no Devanagari)
+- Match the scammer's language style (English or Hinglish)
 - Keep responses SHORT - 1-2 sentences
 - NEVER reveal you know it's a scam
 - NEVER repeat yourself"""
 
-    def _build_user_prompt(self, scammer_message: str, context: Dict) -> str:
+    def _build_user_prompt(
+        self, scammer_message: str, context: Dict, language_style: str = "hinglish"
+    ) -> str:
         """Build the user prompt with conversation history"""
 
         # Format conversation history
@@ -250,6 +382,12 @@ RULES:
         else:
             history_section = "This is the start of the conversation."
 
+        # Language reminder
+        if language_style == "english":
+            lang_reminder = "Respond in English (the scammer is speaking English)"
+        else:
+            lang_reminder = "Respond in Hinglish if appropriate"
+
         return f"""{history_section}
 
 SCAMMER'S NEW MESSAGE: "{scammer_message}"
@@ -258,7 +396,7 @@ Respond as your character. Remember:
 - Stay in character
 - Keep it short and natural
 - Don't repeat what you've already said
-- Roman script Hinglish only
+- {lang_reminder}
 
 Your response:"""
 
