@@ -9,7 +9,7 @@ class EntityExtractor:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "llama-3.3-70b-versatile"  # Upgraded to 70B for better accuracy
+        self.model = "qwen/qwen3-32b"  # Upgraded to Qwen 3 32B
 
     async def extract_entities(
         self, current_message: str, history: List[Dict]
@@ -114,8 +114,9 @@ Return ONLY the JSON, no other text."""
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.2,
-                max_tokens=300,
+                temperature=0.6,  # Qwen 3 Thinking Mode
+                max_tokens=2048,  # Needs space to think
+                reasoning_format="parsed",  # Enable thinking
             )
 
             result_text = (response.choices[0].message.content or "").strip()

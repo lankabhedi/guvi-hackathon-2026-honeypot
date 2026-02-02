@@ -9,7 +9,7 @@ class ScamDetector:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "llama-3.3-70b-versatile"  # Upgraded for better classification
+        self.model = "qwen/qwen3-32b"  # Upgraded to Qwen 3 32B for advanced reasoning
 
     async def analyze(
         self, message: str, conversation_history: list | None = None
@@ -71,9 +71,14 @@ Respond with ONLY the JSON, no other text."""
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.3,
-                max_tokens=300,
+                temperature=0.6,  # Recommended for Qwen 3 Thinking Mode
+                max_tokens=2048,  # Thinking needs more tokens
+                reasoning_format="parsed",  # Enable Qwen 3 Thinking
             )
+
+            # Log reasoning for debugging if available
+            # if hasattr(response.choices[0].message, "reasoning"):
+            #     print(f"🧠 Detector Reasoning: {response.choices[0].message.reasoning}")
 
             result_text = (response.choices[0].message.content or "").strip()
 

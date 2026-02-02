@@ -11,9 +11,7 @@ class PersonaEngine:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = (
-            "llama-3.3-70b-versatile"  # Upgraded to 70B for better Hinglish and nuance
-        )
+        self.model = "qwen/qwen3-32b"  # Upgraded to Qwen 3 32B for superior role-play
         self.current_mood = "NEUTRAL"
         self.mood_history = []
         self.last_openers = []  # Track last 3 opening words
@@ -224,8 +222,9 @@ class PersonaEngine:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.8,  # Increased slightly for variety
-                max_tokens=60,  # REDUCED significantly for speed (was 200)
+                temperature=0.8,  # High creativity for roleplay
+                max_tokens=150,  # Fast generation
+                # No reasoning_format needed for Persona (we want fast chat)
             )
 
             response_text = (
