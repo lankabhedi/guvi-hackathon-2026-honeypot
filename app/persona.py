@@ -200,12 +200,12 @@ class PersonaEngine:
                 messages=[
                     {
                         "role": "system",
-                        "content": f"You are {persona['name']}, {persona['age']} years old. Never reveal you are AI. Never mention being a honeypot.",
+                        "content": f"You are {persona['name']}, {persona['age']} years old. Speak naturally with typos. Short messages only.",
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.75,
-                max_tokens=200,
+                temperature=0.8,  # Increased slightly for variety
+                max_tokens=60,  # REDUCED significantly for speed (was 200)
             )
 
             response_text = (
@@ -388,10 +388,10 @@ class PersonaEngine:
             "FRUSTRATED": "You are frustrated. Express that this is difficult for you.",
             "TIRED": "You are tired of the process. Ask if there's an easier way.",
             "GIVING_UP": "You are about to give up. Express that this is too complicated.",
-            "FAKE_ERROR": "LIE to the scammer. Say the payment FAILED with a 'Server Error' or 'Risk Alert'. Ask for a DIFFERENT bank account/UPI ID. Say 'It says this account is blocked'. Act confused but helpful.",
-            "AGGRESSIVE": "You are Vikram (the son). You just took the phone. You are ANGRY. Demand to know who they are. Say 'I am recording this call'. Ask for their Employee ID. Tell them you know this is a scam.",
-            "SKEPTICAL": "You don't believe them. Ask for proof. Ask 'Why did you call my father?'. Threaten to go to the police cyber cell.",
-            "VICTORIOUS": "They are backing down. Tell them 'I have reported this number'.",
+            "FAKE_ERROR": "Say it failed. 'Server error' or 'Risk Alert'. Ask for another account. Keep it short.",
+            "AGGRESSIVE": "You are Vikram. ANGRY. Demand their ID. 'I am recording this'. Short and rude.",
+            "SKEPTICAL": "Don't believe them. Ask for proof. Threaten police.",
+            "VICTORIOUS": "Say 'I reported this number'. Hang up.",
         }
 
         mood_instruction = mood_responses.get(
@@ -403,19 +403,19 @@ class PersonaEngine:
         if current_entities and (
             current_entities.get("bankAccounts") or current_entities.get("upiIds")
         ):
-            mood_instruction = "CRITICAL STRATEGY: The scammer gave a bank account/UPI. LIE and say the transaction FAILED. Claim your app shows 'Risk Alert' or 'Server Down' for *that specific* account. Ask for a DIFFERENT account to try again. Be polite but insistent that the first one is not working."
+            mood_instruction = "STRATEGY: The payment FAILED. Do NOT mention the specific account number. Just say 'it failed' or 'server error'. Ask for a DIFFERENT account. Keep it short."
 
         # Override instruction if we need to steer to UPI (e.g. they asked for APK/Card)
         elif getattr(self, "steer_to_upi", False):
-            mood_instruction = "STRATEGY: The scammer asked for an App Download or Card Details. Act confused/scared about that. Instead, OFFER TO PAY via UPI/Bank Transfer immediately. Say 'I don't know how to download that, can I just send money to your UPI ID?'."
+            mood_instruction = "STRATEGY: Act confused about the App/Card. Ask if you can just Google Pay or send money to a bank account instead. Keep it simple."
             self.steer_to_upi = False  # Reset flag
 
         # Hive Mind Alert Injection
         hive_mind_context = ""
         if hive_mind_alert:
             val = hive_mind_alert.get("value")
-            count = hive_mind_alert.get("sighting_count")
-            hive_mind_context = f"\n\nCRITICAL INTEL: You recognize the {hive_mind_alert.get('type')} '{val}'. You have seen it used in {count} other scams before. You should mention: 'Wait, my neighbor Sharma ji also sent money to {val} and he said he got scammed. Are you the same person?'\n"
+            # Don't reveal exact stats, just be suspicious
+            hive_mind_context = f"\n\nSTRATEGY: You recognize this account '{val}'. My neighbor got scammed by this number. Ask them if they know Sharma ji."
             mood_instruction += " " + hive_mind_context
 
         prompt = f"""You are {persona["name"]}, age {persona["age"]}. {persona["background"]}
@@ -424,24 +424,20 @@ Your traits: {", ".join(persona["traits"][:3])}
 Speech patterns: {", ".join(persona["speech_patterns"][:2])}
 
 CURRENT EMOTIONAL STATE: {self.current_mood}
-Instruction for this state: {mood_instruction}
+Instruction: {mood_instruction}
 
 CONVERSATION HISTORY:
 {context}
 
 SCAMMER JUST SAID: "{scammer_message}"
 
-Respond as {persona["name"]} would in this emotional state.
-Guidelines:
-- React authentically to the current mood
-- Don't be too suspicious too quickly
-- Stall strategically when confused/overwhelmed
-- Ask 1-2 follow-up questions if worried or confused
-- Use Hinglish (mix Hindi and English) naturally
-- Mention your age/technology difficulties occasionally
-- Keep response to 1-2 sentences
-- NEVER say you're AI or a bot
-- NEVER reveal this is a test/honeypot
+Respond as {persona["name"]}.
+CRITICAL GUIDELINES:
+1. KEEP IT SHORT. Max 1-2 sentences. 
+2. Be natural. Do NOT repeat the scammer's bank numbers or IDs back to them. Just say "that account" or "the number".
+3. Use Hinglish naturally but sparingly. Don't force "arre" in every sentence.
+4. Typos and grammar mistakes are GOOD. You are human, not a bot.
+5. If in FAKE_ERROR mode, just say "It failed, giving error. Do you have another one?"
 
 Your response:"""
 
