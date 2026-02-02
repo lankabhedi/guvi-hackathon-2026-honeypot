@@ -199,12 +199,16 @@ async def process_background_tasks(
     is_scam: bool,
     scam_analysis: Dict,
     current_mood: str,
+    extracted_entities: Dict,  # Pass extracted entities to save function
 ):
     """
-    Handle post-response logic: Termination analysis, Profiling, Callback
+    Handle post-response logic: DB Save, Termination analysis, Profiling, Callback
     Run in background to avoid API timeouts.
     """
     print(f"🔄 [BACKGROUND] Processing post-response tasks for session {session_id}")
+
+    # Save conversation (Moved to background to unblock response)
+    save_conversation(session_id, scammer_message, response_text, extracted_entities)
 
     # PHASE 4: Intelligent Conversation Lifecycle Management
     should_end, end_reason, intel_completeness = (
@@ -384,9 +388,6 @@ async def honeypot_endpoint(
 
     session_info["persona_mood"] = current_mood
 
-    # Save conversation (Must happen before background task to keep history consistent)
-    save_conversation(session_id, scammer_message, response_text, extracted)
-
     # PHASE 4: Background Processing (Lifecycle & Callback)
     # This prevents the API from timing out while doing heavy analysis/reporting
     background_tasks.add_task(
@@ -399,6 +400,7 @@ async def honeypot_endpoint(
         is_scam,
         scam_analysis,
         current_mood,
+        extracted,  # Pass extracted entities
     )
 
     return HoneyPotResponse(status="success", reply=response_text)
