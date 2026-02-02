@@ -10,6 +10,7 @@ import os
 import requests
 import json
 import asyncio
+import time
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,6 +35,8 @@ app = FastAPI(title="Agentic Honey-Pot API - Intelligence Grade")
 API_KEY = os.getenv("API_KEY", "hackathon-api-key-2026")
 GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
 MAX_CONVERSATION_TURNS = 20
+STALE_TURN_LIMIT = 5  # End if no new intel for 5 turns
+INACTIVITY_TIMEOUT = 60  # End if no message for 60 seconds
 
 # Initialize components
 detector = ScamDetector()
@@ -200,6 +203,102 @@ async def send_guvi_callback(
             json.dump(payload, f, indent=2)
 
 
+async def monitor_inactivity(session_id: str):
+    """Wait for inactivity timeout and trigger termination if needed"""
+    # Wait 60 seconds (or configured timeout)
+    await asyncio.sleep(INACTIVITY_TIMEOUT)
+
+    # Check if session still exists and needs termination
+    if session_id not in session_data:
+        return
+
+    session_info = session_data[session_id]
+
+    # If conversation already ended, do nothing
+    if session_info.get("conversation_ended", False):
+        return
+
+    # Check time since last activity
+    time_since_activity = time.time() - session_info["last_activity_ts"]
+
+    # Allow a small buffer (e.g., 2 seconds) for processing time variance
+    if time_since_activity >= INACTIVITY_TIMEOUT - 2:
+        print(
+            f"⏰ [TIMEOUT] Session {session_id} inactive for {time_since_activity:.1f}s. Ending."
+        )
+
+        # Trigger termination logic
+        # We need to construct the necessary data for the callback
+        # Since this runs in background, we fetch latest state
+
+        # Mark as ended to prevent duplicates
+        session_info["conversation_ended"] = True
+
+        # Calculate duration
+        engagement_duration = (
+            datetime.now() - session_info["start_time"]
+        ).total_seconds()
+
+        # Generate final notes
+        agent_notes = build_agent_notes(
+            session_info["scam_type"] or "UNKNOWN",
+            session_info["extracted_entities"],
+            "TIMEOUT",
+            session_info["message_count"],
+            engagement_duration,
+            {"confidence": 0, "risk_level": "UNKNOWN"},  # Placeholder analysis
+        )
+
+        agent_notes += " | Ended due to inactivity timeout."
+
+        # Send callback
+        await send_guvi_callback(
+            session_id=session_id,
+            scam_detected=True,  # Assuming true if we engaged this long
+            total_messages=session_info["message_count"],
+            intelligence=session_info["extracted_entities"],
+            agent_notes=agent_notes,
+            engagement_duration=int(engagement_duration),
+        )
+
+
+def check_staleness(session_info: Dict) -> bool:
+    """
+    Check if we are getting new intel.
+    Returns True if conversation is STALE (no new intel for N turns).
+    """
+    current_entities = session_info["extracted_entities"]
+
+    # Calculate a hash/count of current known entities
+    current_count = 0
+    for key in [
+        "bankAccounts",
+        "upiIds",
+        "phishingLinks",
+        "phoneNumbers",
+        "suspiciousKeywords",
+    ]:
+        current_count += len(current_entities.get(key, []))
+
+    prev_count = session_info.get("last_entity_count", 0)
+
+    if current_count > prev_count:
+        # We got new intel! Reset stale counter
+        session_info["stale_turns"] = 0
+        session_info["last_entity_count"] = current_count
+        print(
+            f"✨ New intel detected! Stale counter reset. (Total entities: {current_count})"
+        )
+        return False
+    else:
+        # No new intel
+        session_info["stale_turns"] += 1
+        print(
+            f"⚠️ No new intel. Stale turns: {session_info['stale_turns']}/{STALE_TURN_LIMIT}"
+        )
+        return session_info["stale_turns"] >= STALE_TURN_LIMIT
+
+
 async def process_background_tasks(
     session_id: str,
     scammer_message: str,
@@ -212,7 +311,7 @@ async def process_background_tasks(
     extracted_entities: Dict,  # Pass extracted entities to save function
 ):
     """
-    Handle post-response logic: DB Save, Termination analysis, Profiling, Callback
+    Handle post-response logic: DB Save, Staleness Check, Timeout Monitor
     Run in background to avoid API timeouts.
     """
     print(f"🔄 [BACKGROUND] Processing post-response tasks for session {session_id}")
@@ -220,18 +319,15 @@ async def process_background_tasks(
     # Save conversation (Moved to background to unblock response)
     save_conversation(session_id, scammer_message, response_text, extracted_entities)
 
-    # PHASE 4: Intelligent Conversation Lifecycle Management
-    (
-        should_end,
-        end_reason,
-        intel_completeness,
-    ) = await extractor.analyze_conversation_for_termination(
-        history + [{"scammer_message": scammer_message, "response": response_text}],
-        session_info["extracted_entities"],
-    )
+    # Check Staleness (Engagement Sufficiency)
+    is_stale = check_staleness(session_info)
+    should_end = False
+    end_reason = ""
 
-    # Check hard limits
-    if session_info["message_count"] >= MAX_CONVERSATION_TURNS:
+    if is_stale:
+        should_end = True
+        end_reason = "STALE_INTERACTION"
+    elif session_info["message_count"] >= MAX_CONVERSATION_TURNS:
         should_end = True
         end_reason = "MAX_TURNS"
 
@@ -266,6 +362,7 @@ async def process_background_tasks(
             f"Aggression: {scammer_profile['behavioral_metrics']['aggression_level']}, "
         )
         agent_notes += f"Persistence: {scammer_profile['patience_level']}"
+        agent_notes += f" | Ended reason: {end_reason}"
 
         # Send callback to GUVI
         await send_guvi_callback(
@@ -309,10 +406,15 @@ async def honeypot_endpoint(
             "scam_type": None,
             "persona_type": "elderly",  # Default
             "conversation_ended": False,
+            # New tracking fields
+            "last_activity_ts": time.time(),
+            "stale_turns": 0,
+            "last_entity_count": 0,
         }
 
     session_info = session_data[session_id]
     session_info["message_count"] += 1
+    session_info["last_activity_ts"] = time.time()  # Update activity timestamp
 
     # Get conversation history
     history = get_conversation_history(session_id)
@@ -406,6 +508,8 @@ async def honeypot_endpoint(
 
     # PHASE 4: Background Processing (Lifecycle & Callback)
     # This prevents the API from timing out while doing heavy analysis/reporting
+
+    # 1. Process post-response logic (save to DB, check staleness, send callback if stale)
     background_tasks.add_task(
         process_background_tasks,
         session_id,
@@ -418,6 +522,10 @@ async def honeypot_endpoint(
         current_mood,
         extracted,  # Pass extracted entities
     )
+
+    # 2. Launch Inactivity Monitor (Timeout)
+    # This will sleep for 60s and check if no new activity happened
+    background_tasks.add_task(monitor_inactivity, session_id)
 
     return HoneyPotResponse(status="success", reply=response_text)
 
