@@ -116,10 +116,17 @@ Return ONLY the JSON, no other text."""
                 ],
                 temperature=0.6,  # Qwen 3 Thinking Mode
                 max_tokens=2048,  # Needs space to think
-                reasoning_format="parsed",  # Enable thinking
+                # reasoning_format="parsed" # REMOVED due to library incompatibility
             )
 
-            result_text = (response.choices[0].message.content or "").strip()
+            content = (response.choices[0].message.content or "").strip()
+
+            # Clean <think> tags for extractor too
+            import re
+
+            result_text = re.sub(
+                r"<think>.*?</think>", "", content, flags=re.DOTALL
+            ).strip()
 
             try:
                 extracted = json.loads(result_text)

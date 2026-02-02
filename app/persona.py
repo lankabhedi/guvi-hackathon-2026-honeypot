@@ -225,7 +225,7 @@ class PersonaEngine:
                 temperature=0.8,  # High creativity for roleplay
                 # max_tokens removed to allow full reasoning + response generation
                 # max_tokens=150,
-                reasoning_format="parsed",  # FORCE reasoning to be parsed separately
+                # reasoning_format="parsed" # REMOVED due to library version incompatibility
             )
 
             # Check if thinking/reasoning content was returned in the content field

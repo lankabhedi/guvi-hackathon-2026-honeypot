@@ -73,14 +73,21 @@ Respond with ONLY the JSON, no other text."""
                 ],
                 temperature=0.6,  # Recommended for Qwen 3 Thinking Mode
                 max_tokens=2048,  # Thinking needs more tokens
-                reasoning_format="parsed",  # Enable Qwen 3 Thinking
+                # reasoning_format="parsed",  # REMOVED due to library incompatibility
             )
 
             # Log reasoning for debugging if available
             # if hasattr(response.choices[0].message, "reasoning"):
             #     print(f"🧠 Detector Reasoning: {response.choices[0].message.reasoning}")
 
-            result_text = (response.choices[0].message.content or "").strip()
+            content = (response.choices[0].message.content or "").strip()
+
+            # Clean <think> tags for detector too
+            import re
+
+            result_text = re.sub(
+                r"<think>.*?</think>", "", content, flags=re.DOTALL
+            ).strip()
 
             # Extract JSON from response
             try:
