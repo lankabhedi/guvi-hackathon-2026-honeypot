@@ -1,4 +1,4 @@
-from groq import Groq
+from groq import AsyncGroq
 import os
 import json
 from typing import Dict, Any, Tuple
@@ -8,10 +8,10 @@ class ScamDetector:
     """AI-powered scam detection using Groq LLM"""
 
     def __init__(self):
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = "llama-3.1-8b-instant"
 
-    def analyze(
+    async def analyze(
         self, message: str, conversation_history: list | None = None
     ) -> Tuple[bool, float, Dict[str, Any]]:
         """
@@ -62,7 +62,7 @@ Respond in this exact JSON format:
 Respond with ONLY the JSON, no other text."""
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {

@@ -1,4 +1,4 @@
-from groq import Groq
+from groq import AsyncGroq
 import os
 import json
 from typing import List, Dict, Any
@@ -8,10 +8,10 @@ class EntityExtractor:
     """AI-powered entity extraction using Groq LLM - extracts ONLY scammer-provided information"""
 
     def __init__(self):
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = "llama-3.1-8b-instant"
 
-    def extract_entities(
+    async def extract_entities(
         self, current_message: str, history: List[Dict]
     ) -> Dict[str, Any]:
         """
@@ -104,7 +104,7 @@ CRITICAL RULES:
 Return ONLY the JSON, no other text."""
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
@@ -114,7 +114,7 @@ Return ONLY the JSON, no other text."""
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
-                max_tokens=600,
+                max_tokens=300,
             )
 
             result_text = (response.choices[0].message.content or "").strip()
@@ -248,7 +248,7 @@ Return ONLY the JSON, no other text."""
 
         return result
 
-    def analyze_conversation_for_termination(
+    async def analyze_conversation_for_termination(
         self, history: List[Dict], extracted_entities: Dict
     ) -> tuple:
         """
@@ -302,7 +302,7 @@ Respond in JSON:
 Respond with ONLY the JSON."""
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {

@@ -1,4 +1,4 @@
-from groq import Groq
+from groq import AsyncGroq
 import os
 from typing import List, Dict, Tuple
 
@@ -10,7 +10,7 @@ class PersonaEngine:
     """
 
     def __init__(self):
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.model = "llama-3.1-8b-instant"
         self.current_mood = "NEUTRAL"
         self.mood_history = []
@@ -160,7 +160,7 @@ class PersonaEngine:
             "SKEPTICAL": {"explanation": "AGGRESSIVE", "proof": "SKEPTICAL"},
         }
 
-    def generate_response(
+    async def generate_response(
         self,
         scammer_message: str,
         history: List[Dict],
@@ -195,7 +195,7 @@ class PersonaEngine:
         )
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {

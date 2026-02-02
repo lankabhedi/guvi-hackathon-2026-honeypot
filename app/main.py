@@ -9,6 +9,7 @@ import sys
 import os
 import requests
 import json
+import asyncio
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -211,11 +212,13 @@ async def process_background_tasks(
     save_conversation(session_id, scammer_message, response_text, extracted_entities)
 
     # PHASE 4: Intelligent Conversation Lifecycle Management
-    should_end, end_reason, intel_completeness = (
-        extractor.analyze_conversation_for_termination(
-            history + [{"scammer_message": scammer_message, "response": response_text}],
-            session_info["extracted_entities"],
-        )
+    (
+        should_end,
+        end_reason,
+        intel_completeness,
+    ) = await extractor.analyze_conversation_for_termination(
+        history + [{"scammer_message": scammer_message, "response": response_text}],
+        session_info["extracted_entities"],
     )
 
     # Check hard limits
@@ -307,8 +310,15 @@ async def honeypot_endpoint(
     # Get conversation history
     history = get_conversation_history(session_id)
 
-    # PHASE 1: AI-Powered Scam Detection
-    is_scam, confidence, scam_analysis = detector.analyze(scammer_message, history)
+    # PHASE 1 & 2: Parallel Scam Detection and Entity Extraction
+    # Run detector and extractor in parallel using asyncio.gather to reduce latency
+    detection_task = detector.analyze(scammer_message, history)
+    extraction_task = extractor.extract_entities(scammer_message, history)
+
+    # Wait for both to complete
+    (is_scam, confidence, scam_analysis), extracted = await asyncio.gather(
+        detection_task, extraction_task
+    )
 
     # Store scam type for this session
     if not session_info["scam_type"] and is_scam:
@@ -340,7 +350,8 @@ async def honeypot_endpoint(
             session_info["extracted_entities"]["suspiciousKeywords"].append(tactic)
 
     # PHASE 2: AI-Powered Entity Extraction
-    extracted = extractor.extract_entities(scammer_message, history)
+    # Entity extraction is now done in parallel with detection above
+    # extracted = extractor.extract_entities(scammer_message, history)
 
     # Accumulate intelligence and update Hive Mind
     hive_mind_alert = None
@@ -370,7 +381,7 @@ async def honeypot_endpoint(
             session_info["extracted_entities"]["amounts"].append(value)
 
     # PHASE 3: Generate Persona Response with Emotional Intelligence
-    response_text, persona_id, current_mood = persona.generate_response(
+    response_text, persona_id, current_mood = await persona.generate_response(
         scammer_message,
         history,
         scam_analysis,
