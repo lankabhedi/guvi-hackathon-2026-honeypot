@@ -528,7 +528,7 @@ async def honeypot_endpoint(
 
     # 2. Launch Inactivity Monitor (Timeout)
     # This will sleep for 60s and check if no new activity happened
-    background_tasks.add_task(monitor_inactivity, session_id)
+    # background_tasks.add_task(monitor_inactivity, session_id)
 
     return HoneyPotResponse(status="success", reply=response_text)
 
