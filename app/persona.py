@@ -322,11 +322,16 @@ You need everything explained step by step.""",
             "emotional_triggers", "React naturally to the situation."
         )
 
-        # Language style instruction
+        # Language style instruction - make it very explicit
         if language_style == "english":
-            language_instruction = "The scammer is speaking in ENGLISH. Respond in ENGLISH only. Do not use Hindi words unless they do first."
+            language_instruction = """CRITICAL - LANGUAGE RULE:
+The scammer is speaking in PURE ENGLISH. 
+You MUST respond in ENGLISH ONLY.
+DO NOT use any Hindi words like 'bhaiya', 'kya', 'hai', 'aap', etc.
+Write like an English-speaking Indian would."""
         else:
-            language_instruction = "The scammer is using Hinglish. You can respond in natural Hinglish (Roman script only, no Devanagari)."
+            language_instruction = """LANGUAGE:
+The scammer is using Hinglish. Respond in natural Hinglish (Roman script only, no Devanagari)."""
 
         return f"""You are an AI agent operating a honeypot to catch scammers.
 
@@ -384,9 +389,9 @@ RULES:
 
         # Language reminder
         if language_style == "english":
-            lang_reminder = "Respond in English (the scammer is speaking English)"
+            lang_reminder = "RESPOND IN ENGLISH ONLY - no Hindi words"
         else:
-            lang_reminder = "Respond in Hinglish if appropriate"
+            lang_reminder = "Respond in Hinglish"
 
         return f"""{history_section}
 
@@ -394,7 +399,7 @@ SCAMMER'S NEW MESSAGE: "{scammer_message}"
 
 Respond as your character. Remember:
 - Stay in character
-- Keep it short and natural
+- Keep it short and natural (1-2 sentences)
 - Don't repeat what you've already said
 - {lang_reminder}
 
