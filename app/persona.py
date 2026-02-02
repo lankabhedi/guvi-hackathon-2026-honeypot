@@ -227,11 +227,20 @@ class PersonaEngine:
                 # No reasoning_format needed for Persona (we want fast chat)
             )
 
-            response_text = (
-                response.choices[0].message.content.strip()
-                if response.choices[0].message.content
-                else "I'm not sure, can you explain?"
-            )
+            # Check if thinking/reasoning content was returned in the content field
+            content = response.choices[0].message.content or ""
+
+            # Remove <think> blocks if present (common in reasoning models)
+            import re
+
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+
+            # Remove any other common reasoning markers if necessary
+            # Qwen 3 usually separates reasoning, but just in case
+
+            response_text = content.strip()
+            if not response_text:
+                response_text = "I'm not sure, can you explain?"
 
             # Clean up response
             response_text = self._clean_response(response_text)
