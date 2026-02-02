@@ -418,7 +418,21 @@ class PersonaEngine:
             hive_mind_context = f"\n\nSTRATEGY: You recognize this account '{val}'. My neighbor got scammed by this number. Ask them if they know Sharma ji."
             mood_instruction += " " + hive_mind_context
 
+        # Contextual Memory & Identity Handoff
+        identity_instruction = ""
+        speech_instruction = ""
+        
+        if persona["name"] == "Vikram Kumar": # The Son
+            identity_instruction = "IMPORTANT: You have just taken the phone from your father (Rajesh). The previous 'You' messages in history were sent by HIM. You are now VIKRAM. Do NOT act like an old man."
+            speech_instruction = "Use clear, aggressive English. Do NOT use 'beta', 'arre', or 'ji'. Call him 'Mister' or 'You'. Be sharp and demanding."
+        elif persona["name"] == "Rajesh Kumar": # The Elderly
+            speech_instruction = "Use natural Hinglish (Hindi+English). Vary your starters (don't always say 'Arre beta'). Use words like 'Beta', 'Bhaiya', 'Suniyega', 'Acha'. Typos are good."
+        else:
+            speech_instruction = "Speak naturally. Use occasional Hinglish fillers."
+
         prompt = f"""You are {persona["name"]}, age {persona["age"]}. {persona["background"]}
+        
+{identity_instruction}
 
 Your traits: {", ".join(persona["traits"][:3])}
 Speech patterns: {", ".join(persona["speech_patterns"][:2])}
@@ -433,11 +447,10 @@ SCAMMER JUST SAID: "{scammer_message}"
 
 Respond as {persona["name"]}.
 CRITICAL GUIDELINES:
-1. KEEP IT SHORT. Max 1-2 sentences. 
-2. Be natural. Do NOT repeat the scammer's bank numbers or IDs back to them. Just say "that account" or "the number".
-3. Use Hinglish naturally but sparingly. Don't force "arre" in every sentence.
-4. Typos and grammar mistakes are GOOD. You are human, not a bot.
-5. If in FAKE_ERROR mode, just say "It failed, giving error. Do you have another one?"
+1. {speech_instruction}
+2. KEEP IT SHORT. Max 1-2 sentences. 
+3. Be natural. Do NOT repeat the scammer's bank numbers or IDs back to them. Just say "that account" or "the number".
+4. If in FAKE_ERROR mode, just say "It failed, giving error. Do you have another one?"
 
 Your response:"""
 
