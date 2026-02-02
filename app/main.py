@@ -205,6 +205,9 @@ async def send_guvi_callback(
 
 async def monitor_inactivity(session_id: str):
     """Wait for inactivity timeout and trigger termination if needed"""
+    print(
+        f"⏳ [MONITOR] Started inactivity monitor for {session_id} (Timeout: {INACTIVITY_TIMEOUT}s)"
+    )
     # Wait 60 seconds (or configured timeout)
     await asyncio.sleep(INACTIVITY_TIMEOUT)
 
