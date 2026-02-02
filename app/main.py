@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from typing import Optional, List, Dict, Any
 import uvicorn
 from dotenv import load_dotenv
@@ -27,6 +28,23 @@ from app.database import (
 load_dotenv()
 
 app = FastAPI(title="Agentic Honey-Pot API - Intelligence Grade")
+
+
+# Debugging Middleware to catch 422 errors and log incoming JSON
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    try:
+        body = await request.json()
+        print(f"❌ 422 Validation Error. Incoming Body: {json.dumps(body)}")
+        print(f"❌ Validation Details: {exc.errors()}")
+    except Exception:
+        print("❌ 422 Error (Could not parse body)")
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": body if "body" in locals() else "N/A"},
+    )
+
 
 # Configuration
 API_KEY = os.getenv("API_KEY", "hackathon-api-key-2026")
@@ -59,7 +77,7 @@ class HoneyPotRequest(BaseModel):
     sessionId: str
     message: MessageInput
     conversationHistory: Optional[List[Dict[str, Any]]] = []
-    metadata: Optional[MetadataInput] = None
+    metadata: Optional[MetadataInput] = None  # made optional with default
 
 
 class HoneyPotResponse(BaseModel):
