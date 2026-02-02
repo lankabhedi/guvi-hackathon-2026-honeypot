@@ -261,14 +261,29 @@ Your response:"""
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.85,
-                max_tokens=200,
+                max_tokens=500,  # Increased for thinking model overhead
             )
 
             content = response.choices[0].message.content or ""
 
-            # Remove thinking tags if present
+            # Remove thinking tags if present (Qwen/reasoning models)
             content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
-            content = content.strip().strip('"')
+            content = re.sub(
+                r"<reasoning>.*?</reasoning>", "", content, flags=re.DOTALL
+            )
+
+            # Clean up whitespace and quotes
+            content = content.strip().strip('"').strip()
+
+            # If response still looks incomplete (ends with comma or 'Waise,'), try to complete it
+            if (
+                content.endswith(",")
+                or content.endswith("aur")
+                or content.endswith("ki")
+            ):
+                content = content.rstrip(",").rstrip("aur").rstrip("ki").strip()
+                if not content.endswith("?") and not content.endswith("."):
+                    content += "..."
 
             if not content:
                 content = self._fallback_response(persona_type)
