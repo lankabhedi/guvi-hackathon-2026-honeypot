@@ -29,7 +29,7 @@ class PersonaAgent:
 
     def __init__(self):
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "openai/gpt-oss-120b"
+        self.model = "openai/gpt-oss-20b"
         self.session_manager = SessionManager()
 
         # Rich persona definitions - focus on personality and situation, not physical traits
