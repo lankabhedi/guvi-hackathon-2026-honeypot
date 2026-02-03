@@ -27,7 +27,7 @@ class SessionManager:
         self.db_path = db_path
         self.context_window_size = context_window_size
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.summary_model = "openai/gpt-oss-20b"  # Fast model for summarization
+        self.summary_model = "llama-3.1-8b-instant"  # Fast model for summarization
         self._init_tables()
 
     def _init_tables(self):
