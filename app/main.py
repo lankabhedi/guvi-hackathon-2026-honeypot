@@ -1,8 +1,9 @@
 from fastapi import FastAPI, HTTPException, Header, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from typing import Optional, List, Dict, Any, Union
+from contextlib import asynccontextmanager
 import uvicorn
 from dotenv import load_dotenv
 import sys
@@ -11,7 +12,14 @@ import requests
 import json
 import asyncio
 import time
+import logging
 from datetime import datetime
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -29,7 +37,41 @@ from app.database import (
 
 load_dotenv()
 
-app = FastAPI(title="Agentic Honey-Pot API - Intelligence Grade")
+# Configuration
+API_KEY = os.getenv("API_KEY", "hackathon-api-key-2026")
+GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
+MAX_CONVERSATION_TURNS = 20
+STALE_TURN_LIMIT = 3  # End if no new intel for 3 turns
+INACTIVITY_TIMEOUT = 15  # End if no message for 15 seconds
+
+# Initialize components
+detector = ScamDetector()
+persona = PersonaEngine()
+extractor = EntityExtractor()
+profiler = ScammerProfiler()
+
+# Session tracking
+session_data = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    # Startup
+    logger.info("🚀 Starting up Agentic Honey-Pot API...")
+    init_db()
+    logger.info("✅ Database initialized")
+    yield
+    # Shutdown
+    logger.info("🛑 Shutting down...")
+
+
+app = FastAPI(
+    title="Agentic Honey-Pot API",
+    description="AI-powered honeypot for scam detection and intelligence extraction",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
 # Configuration
 API_KEY = os.getenv("API_KEY", "hackathon-api-key-2026")
@@ -382,16 +424,30 @@ async def process_background_tasks(
 async def honeypot_endpoint(
     request: HoneyPotRequest,
     background_tasks: BackgroundTasks,
-    x_api_key: str = Header(...),
+    x_api_key: str = Header(..., alias="x-api-key"),
 ):
     """
     Main honeypot endpoint - AI-powered scam detection and engagement
     """
+    logger.info(f"📥 Received request for session: {request.sessionId}")
+    logger.info(f"📝 Message: {request.message.text[:100]}...")
+
     if x_api_key != API_KEY:
+        logger.error(f"❌ Invalid API key provided")
         raise HTTPException(status_code=401, detail="Invalid API key")
 
     session_id = request.sessionId
     scammer_message = request.message.text
+
+    # Validate session_id
+    if not session_id or not isinstance(session_id, str):
+        logger.error("❌ Invalid sessionId")
+        raise HTTPException(status_code=400, detail="Invalid sessionId")
+
+    # Validate message text
+    if not scammer_message or not isinstance(scammer_message, str):
+        logger.error("❌ Invalid message text")
+        raise HTTPException(status_code=400, detail="Invalid message text")
 
     # Initialize session if new
     if session_id not in session_data:
@@ -424,13 +480,48 @@ async def honeypot_endpoint(
 
     # PHASE 1 & 2: Parallel Scam Detection and Entity Extraction
     # Run detector and extractor in parallel using asyncio.gather to reduce latency
-    detection_task = detector.analyze(scammer_message, history)
-    extraction_task = extractor.extract_entities(scammer_message, history)
+    try:
+        detection_task = detector.analyze(scammer_message, history)
+        extraction_task = extractor.extract_entities(scammer_message, history)
 
-    # Wait for both to complete
-    (is_scam, confidence, scam_analysis), extracted = await asyncio.gather(
-        detection_task, extraction_task
-    )
+        # Wait for both to complete with timeout
+        (is_scam, confidence, scam_analysis), extracted = await asyncio.wait_for(
+            asyncio.gather(detection_task, extraction_task),
+            timeout=10.0,  # 10 second timeout for AI operations
+        )
+
+        logger.info(
+            f"🔍 Scam detection: is_scam={is_scam}, confidence={confidence:.2f}"
+        )
+
+    except asyncio.TimeoutError:
+        logger.error("❌ AI operations timed out")
+        # Fallback: assume it might be a scam and proceed with caution
+        is_scam = True
+        confidence = 0.5
+        scam_analysis = {"scam_type": "UNKNOWN", "confidence": 0.5, "tactics": []}
+        extracted = {
+            "bankAccounts": [],
+            "upiIds": [],
+            "phishingLinks": [],
+            "phoneNumbers": [],
+            "amounts": [],
+            "suspiciousKeywords": [],
+        }
+    except Exception as e:
+        logger.error(f"❌ Error in detection/extraction: {str(e)}")
+        # Fallback response
+        is_scam = True
+        confidence = 0.5
+        scam_analysis = {"scam_type": "UNKNOWN", "confidence": 0.5, "tactics": []}
+        extracted = {
+            "bankAccounts": [],
+            "upiIds": [],
+            "phishingLinks": [],
+            "phoneNumbers": [],
+            "amounts": [],
+            "suspiciousKeywords": [],
+        }
 
     # Store scam type for this session
     if not session_info["scam_type"] and is_scam:
@@ -499,12 +590,35 @@ async def honeypot_endpoint(
             session_info["extracted_entities"]["amounts"].append(value)
 
     # PHASE 3: Generate Persona Response using the intelligent agent
-    response_text, persona_id = await persona.generate_response(
-        session_id,
-        scammer_message,
-        active_persona,
-        session_info["extracted_entities"],
-    )
+    try:
+        response_text, persona_id = await asyncio.wait_for(
+            persona.generate_response(
+                session_id,
+                scammer_message,
+                active_persona,
+                session_info["extracted_entities"],
+            ),
+            timeout=8.0,  # 8 second timeout for response generation
+        )
+        logger.info(f"💬 Generated response: {response_text[:100]}...")
+
+    except asyncio.TimeoutError:
+        logger.error("❌ Persona response generation timed out")
+        # Fallback response based on persona
+        fallback_responses = {
+            "elderly": "Beta, thoda samajh nahi aa raha. Aap phir se bata sakte ho?",
+            "homemaker": "Ek minute, main confuse ho gayi. Phir se samjhana?",
+            "student": "Sorry bro, network issue hai. Repeat karna?",
+            "naive_girl": "Sir, mujhe samajh nahi aaya. Aap phir se bataiye?",
+        }
+        response_text = fallback_responses.get(
+            active_persona, "Thoda ruko, samajh nahi aa raha."
+        )
+        persona_id = active_persona
+    except Exception as e:
+        logger.error(f"❌ Error generating persona response: {str(e)}")
+        response_text = "Ek minute please, thoda confusion ho raha hai."
+        persona_id = active_persona
 
     # For backward compatibility with background tasks
     current_mood = "ENGAGED"
@@ -526,10 +640,12 @@ async def honeypot_endpoint(
         extracted,  # Pass extracted entities
     )
 
-    # 2. Launch Inactivity Monitor (Timeout)
-    # This will sleep for 60s and check if no new activity happened
-    background_tasks.add_task(monitor_inactivity, session_id)
+    # 2. Launch Inactivity Monitor (Timeout) - Only if not already running
+    if not session_info.get("monitor_started", False):
+        session_info["monitor_started"] = True
+        background_tasks.add_task(monitor_inactivity, session_id)
 
+    logger.info(f"✅ Request processed successfully for session: {session_id}")
     return HoneyPotResponse(status="success", reply=response_text)
 
 
