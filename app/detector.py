@@ -8,8 +8,18 @@ class ScamDetector:
     """AI-powered scam detection using Groq LLM"""
 
     def __init__(self):
-        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+        self._client = None
         self.model = "llama-3.1-8b-instant"
+
+    @property
+    def client(self):
+        """Lazy initialization of Groq client"""
+        if self._client is None:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self._client = AsyncGroq(api_key=api_key)
+        return self._client
 
     async def analyze(
         self, message: str, conversation_history: list | None = None

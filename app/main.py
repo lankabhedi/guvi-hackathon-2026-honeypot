@@ -58,8 +58,21 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     logger.info("🚀 Starting up Agentic Honey-Pot API...")
-    init_db()
-    logger.info("✅ Database initialized")
+    logger.info(f"📋 Python version: {sys.version}")
+    logger.info(f"📋 Working directory: {os.getcwd()}")
+    logger.info(
+        f"📋 GROQ_API_KEY set: {'Yes' if os.getenv('GROQ_API_KEY') else 'NO - MISSING!'}"
+    )
+    logger.info(f"📋 API_KEY set: {'Yes' if os.getenv('API_KEY') else 'Using default'}")
+
+    try:
+        init_db()
+        logger.info("✅ Database initialized")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        raise
+
+    logger.info("✅ Startup complete - ready to receive requests")
     yield
     # Shutdown
     logger.info("🛑 Shutting down...")
@@ -116,9 +129,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-@app.on_event("startup")
-async def startup_event():
-    init_db()
+# Note: startup is handled by lifespan context manager above
 
 
 @app.get("/health")
