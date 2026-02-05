@@ -184,34 +184,53 @@ Return ONLY the JSON, no markdown."""
         # Financial
         financial = extracted.get("financial", {})
         for acc in financial.get("bank_accounts", []):
-            if acc.get("confidence", 0) > 0.6:
-                flattened["bankAccounts"].append(acc["value"])
+            # Handle both dict (with confidence) and string formats
+            if isinstance(acc, dict):
+                if acc.get("confidence", 0) > 0.6:
+                    flattened["bankAccounts"].append(acc["value"])
+            elif isinstance(acc, str):
+                flattened["bankAccounts"].append(acc)
 
         for upi in financial.get("upi_ids", []):
-            if upi.get("confidence", 0) > 0.6:
-                flattened["upiIds"].append(upi["value"])
+            if isinstance(upi, dict):
+                if upi.get("confidence", 0) > 0.6:
+                    flattened["upiIds"].append(upi["value"])
+            elif isinstance(upi, str):
+                flattened["upiIds"].append(upi)
 
         # Contact
         contact = extracted.get("contact", {})
         for phone in contact.get("phone_numbers", []):
-            if phone.get("confidence", 0) > 0.6:
-                flattened["phoneNumbers"].append(phone["value"])
+            if isinstance(phone, dict):
+                if phone.get("confidence", 0) > 0.6:
+                    flattened["phoneNumbers"].append(phone["value"])
+            elif isinstance(phone, str):
+                flattened["phoneNumbers"].append(phone)
 
         # Infrastructure
         infra = extracted.get("infrastructure", {})
         for link in infra.get("phishing_links", []):
-            if link.get("confidence", 0) > 0.6:
-                flattened["phishingLinks"].append(link["value"])
+            if isinstance(link, dict):
+                if link.get("confidence", 0) > 0.6:
+                    flattened["phishingLinks"].append(link["value"])
+            elif isinstance(link, str):
+                flattened["phishingLinks"].append(link)
 
         # Operational
         operational = extracted.get("operational", {})
         for amt in operational.get("amounts", []):
-            if amt.get("confidence", 0) > 0.6:
-                flattened["amounts"].append(amt["value"])
+            if isinstance(amt, dict):
+                if amt.get("confidence", 0) > 0.6:
+                    flattened["amounts"].append(amt["value"])
+            elif isinstance(amt, str):
+                flattened["amounts"].append(amt)
 
         for ref in operational.get("reference_numbers", []):
-            if ref.get("confidence", 0) > 0.6:
-                flattened["referenceNumbers"].append(ref["value"])
+            if isinstance(ref, dict):
+                if ref.get("confidence", 0) > 0.6:
+                    flattened["referenceNumbers"].append(ref["value"])
+            elif isinstance(ref, str):
+                flattened["referenceNumbers"].append(ref)
 
         flattened["organizationClaimed"] = operational.get("organization_claimed", "")
 
