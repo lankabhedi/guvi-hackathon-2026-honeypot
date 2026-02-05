@@ -30,90 +30,52 @@ class EntityExtractor:
         """
         conversation_text = self._build_conversation_text(current_message, history)
 
-        prompt = f"""You are a fraud investigation AI. Extract actionable intelligence from this scam conversation.
+        prompt = f"""You are extracting scammer details from a conversation.
 
 CONVERSATION:
 {conversation_text}
 
 INSTRUCTIONS:
-1. Extract ONLY information the SCAMMER provided (not what they asked from victim)
-2. Focus on financial details, contact info, and infrastructure
-3. Be precise - only extract confirmed scammer data
-4. If something is unclear or could be legitimate, mark confidence lower
+Extract ALL bank accounts, UPI IDs, phone numbers, links, and suspicious keywords you see in the text.
 
-EXTRACT THESE ENTITIES:
+Look for patterns like:
+- bankAccount: 1234567890123456
+- upiId: scammer@upi
+- phoneNumber: +91-XXXXXXXXXX
+- phishing link: http://example.com
+- suspicious keyword: urgent, verify, blocked
 
-Financial Details (scammer's receiving accounts):
-- bank_accounts: Account numbers provided by scammer for receiving money
-- upi_ids: UPI IDs provided by scammer (format: username@provider)
-- ifsc_codes: IFSC codes provided
-- wallet_ids: Paytm/PhonePe/GooglePay wallet IDs
-
-Contact Information (how to reach scammer):
-- phone_numbers: Phone numbers scammer provided or called from
-- whatsapp_numbers: WhatsApp numbers shared
-- emails: Email addresses provided by scammer
-- telegram_handles: Telegram usernames
-
-Infrastructure (scammer's tools):
-- phishing_links: URLs scammer asked victim to click
-- malicious_apps: App names or APK links
-- fake_websites: Domain names of fake sites
-
-Operational Details:
-- amounts: Money amounts requested (e.g., "5000 rupees", "processing fee of 200")
-- reference_numbers: Transaction IDs, reference codes, ticket numbers
-- organization_claimed: Who they claim to be ("SBI Bank", "Amazon", etc.)
-
-Victims' Information (what they asked for - for context only):
-- info_requested: List what they asked victim to provide
-
-CONFIDENCE SCORES:
-- 0.9-1.0: Definitely scammer data (explicitly stated)
-- 0.7-0.8: Likely scammer data (strong context)
-- 0.5-0.6: Possible scammer data (unclear)
-- 0.0-0.4: Uncertain or likely legitimate
+Extract the VALUES, not the field names.
 
 Return this exact JSON structure:
 {{
     "financial": {{
-        "bank_accounts": [{{"value": "FULL_ACCOUNT_NUMBER_HERE", "confidence": 0.95, "context": "send money to this account"}}],
-        "upi_ids": [],
+        "bank_accounts": ["1234567890123456"],
+        "upi_ids": ["scammer@upi"],
         "ifsc_codes": [],
         "wallet_ids": []
     }},
     "contact": {{
-        "phone_numbers": [],
+        "phone_numbers": ["+91-9876543210"],
         "whatsapp_numbers": [],
         "emails": [],
         "telegram_handles": []
     }},
     "infrastructure": {{
-        "phishing_links": [],
+        "phishing_links": ["http://example.com"],
         "malicious_apps": [],
         "fake_websites": []
     }},
     "operational": {{
         "amounts": [],
         "reference_numbers": [],
-        "organization_claimed": ""
+        "organization_claimed": "SBI Bank"
     }},
-    "victim_targeted": {{
-        "info_requested": ["UPI ID", "OTP", "Account number"]
-    }},
-    "extraction_summary": "Brief summary of what was extracted"
+    "extraction_summary": "Extracted 1 bank account, 1 UPI ID, 1 phone number"
 }}
 
-CRITICAL RULES:
-1. ONLY extract what the SCAMMER provided (their accounts, their numbers)
-2. DO NOT extract what they asked the victim to provide
-3. Include confidence scores for every extraction
-4. If no entities found, return empty arrays
-5. Be conservative - only high confidence extractions
-6. EXTRACT EXACTLY AS WRITTEN. Do not alter, truncate, or normalize numbers. Preserve full 16-digit account numbers.
-7. THINKING PROCESS: Be concise. Don't over-analyze.
-
-Return ONLY the JSON, no other text."""
+If no entities found, return empty arrays.
+Return ONLY the JSON, no markdown."""
 
         try:
             response = await self.client.chat.completions.create(
