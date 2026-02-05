@@ -88,8 +88,8 @@ Return ONLY the JSON, no markdown."""
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=1,  # Using GPT OSS 120B recommended temperature
-                max_completion_tokens=8192,
+                temperature=1,
+                max_tokens=8192,  # Changed from max_completion_tokens for compatibility
                 top_p=1,
             )
 

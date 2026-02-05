@@ -264,8 +264,8 @@ class SessionManager:
                         "content": f"Previous summary:\n{current_summary}\n\nNew messages to add to summary:\n{old_convo}\n\nWrite an updated brief summary (2-3 sentences max):",
                     },
                 ],
-                temperature=1,  # Using GPT OSS 120B recommended temperature
-                max_completion_tokens=8192,
+                temperature=1,
+                max_tokens=8192,  # Changed from max_completion_tokens for compatibility
                 top_p=1,
             )
 
