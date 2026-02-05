@@ -1,7 +1,8 @@
 import sqlite3
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import os
+import json
 
 
 def init_db():
@@ -69,6 +70,21 @@ def init_db():
         )
     """)
 
+    # NEW: Session state table to persist session_data
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS session_state (
+            session_id TEXT PRIMARY KEY,
+            start_time TIMESTAMP,
+            message_count INTEGER DEFAULT 0,
+            extracted_entities TEXT DEFAULT '{}',
+            scam_type TEXT,
+            persona_type TEXT DEFAULT 'elderly',
+            conversation_ended BOOLEAN DEFAULT 0,
+            last_activity_ts TIMESTAMP,
+            updated_at TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -90,6 +106,139 @@ def get_conversation_history(conversation_id: str) -> List[Dict]:
 
     rows = cursor.fetchall()
     conn.close()
+
+    history = []
+    for row in rows:
+        history.append(
+            {
+                "turn_number": row[0],
+                "scammer_message": row[1],
+                "response": row[2],
+                "extracted_entities": row[3],
+            }
+        )
+
+    return history
+
+
+def save_session_state(session_id: str, session_info: Dict[str, Any]):
+    """Save session state to database for persistence"""
+    conn = sqlite3.connect("honeypot.db")
+    cursor = conn.cursor()
+
+    # Convert extracted_entities dict to JSON string
+    entities_json = json.dumps(session_info.get("extracted_entities", {}))
+
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO session_state 
+        (session_id, start_time, message_count, extracted_entities, scam_type, 
+         persona_type, conversation_ended, last_activity_ts, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        (
+            session_id,
+            session_info.get("start_time", datetime.now()),
+            session_info.get("message_count", 0),
+            entities_json,
+            session_info.get("scam_type"),
+            session_info.get("persona_type", "elderly"),
+            session_info.get("conversation_ended", False),
+            session_info.get("last_activity_ts", datetime.now().timestamp()),
+            datetime.now(),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def load_session_state(session_id: str) -> Optional[Dict[str, Any]]:
+    """Load session state from database"""
+    conn = sqlite3.connect("honeypot.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT start_time, message_count, extracted_entities, scam_type, 
+               persona_type, conversation_ended, last_activity_ts
+        FROM session_state WHERE session_id = ?
+    """,
+        (session_id,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        # Parse JSON entities
+        try:
+            extracted_entities = json.loads(row[2])
+        except:
+            extracted_entities = {
+                "bankAccounts": [],
+                "upiIds": [],
+                "phishingLinks": [],
+                "phoneNumbers": [],
+                "amounts": [],
+                "suspiciousKeywords": [],
+            }
+
+        return {
+            "start_time": row[0],
+            "message_count": row[1],
+            "extracted_entities": extracted_entities,
+            "scam_type": row[3],
+            "persona_type": row[4] or "elderly",
+            "conversation_ended": bool(row[5]),
+            "last_activity_ts": row[6],
+            "stale_turns": 0,
+            "last_entity_count": 0,
+        }
+
+    return None
+
+
+def get_all_session_entities(session_id: str) -> Dict[str, Any]:
+    """Get all extracted entities from all messages in a session"""
+    conn = sqlite3.connect("honeypot.db")
+    cursor = conn.cursor()
+
+    # Get all entities from messages table
+    cursor.execute(
+        """
+        SELECT extracted_entities FROM messages 
+        WHERE conversation_id = ? ORDER BY turn_number
+    """,
+        (session_id,),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Aggregate all entities
+    aggregated = {
+        "bankAccounts": [],
+        "upiIds": [],
+        "phishingLinks": [],
+        "phoneNumbers": [],
+        "amounts": [],
+        "suspiciousKeywords": [],
+    }
+
+    for row in rows:
+        try:
+            entities = json.loads(row[0])
+            for key in aggregated.keys():
+                if key in entities and isinstance(entities[key], list):
+                    # Add unique values only
+                    for val in entities[key]:
+                        if val and val not in aggregated[key]:
+                            aggregated[key].append(val)
+        except:
+            pass
+
+    return aggregated
 
     history = []
     for row in rows:

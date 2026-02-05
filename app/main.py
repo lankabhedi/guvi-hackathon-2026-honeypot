@@ -33,6 +33,9 @@ from app.database import (
     save_conversation,
     check_hive_mind,
     update_hive_mind,
+    save_session_state,
+    load_session_state,
+    get_all_session_entities,
 )
 
 load_dotenv()
@@ -181,25 +184,113 @@ def build_agent_notes(
     return " | ".join(notes_parts)
 
 
+async def send_guvi_callback(
+    session_id: str,
+    scam_detected: bool,
+    total_messages: int,
+    intelligence: Dict,
+    agent_notes: str,
+    engagement_duration: int,
+):
+    """Send final results to GUVI evaluation endpoint"""
+    GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
+
+    payload = {
+        "sessionId": session_id,
+        "scamDetected": scam_detected,
+        "totalMessagesExchanged": total_messages,
+        "extractedIntelligence": {
+            "bankAccounts": intelligence.get("bankAccounts", []),
+            "upiIds": intelligence.get("upiIds", []),
+            "phishingLinks": intelligence.get("phishingLinks", []),
+            "phoneNumbers": intelligence.get("phoneNumbers", []),
+            "suspiciousKeywords": intelligence.get("suspiciousKeywords", []),
+        },
+        "agentNotes": agent_notes,
+        "engagementDurationSeconds": engagement_duration,
+    }
+
+    try:
+        response = requests.post(
+            GUVI_CALLBACK_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+
+        logger.info(f"✅ GUVI Callback sent: {response.status_code}")
+        if response.status_code != 200:
+            logger.warning(f"⚠️  Callback response: {response.text}")
+
+    except Exception as e:
+        logger.error(f"❌ Failed to send GUVI callback: {e}")
+        # Log locally as backup
+        with open(f"callback_backup_{session_id}.json", "w") as f:
+            json.dump(payload, f, indent=2)
+
+
 async def process_background_tasks(
     session_id: str,
     scammer_message: str,
     response_text: str,
     extracted_entities: Dict,
+    session_info: Dict,
+    is_scam: bool,
+    scam_analysis: Dict,
 ):
     """
-    Simple background task - just save conversation to DB.
-    No termination logic - conversation continues indefinitely.
+    Background task - save conversation and session state to DB.
+    Also check if we should send callback (every 15 turns).
     """
-    logger.info(f"🔄 [BACKGROUND] Saving conversation for session {session_id}")
+    logger.info(f"🔄 [BACKGROUND] Processing session {session_id}")
 
     try:
+        # Save conversation
         save_conversation(
             session_id, scammer_message, response_text, extracted_entities
         )
         logger.info(f"✅ Conversation saved for session {session_id}")
+
+        # Save session state
+        save_session_state(session_id, session_info)
+        logger.info(f"✅ Session state saved for session {session_id}")
+
+        # Check if we should send callback (every 15 turns)
+        if session_info["message_count"] >= 15 and not session_info.get(
+            "callback_sent", False
+        ):
+            logger.info(
+                f"📞 Sending GUVI callback for session {session_id} (15 turns reached)"
+            )
+
+            engagement_duration = int(
+                (datetime.now() - session_info["start_time"]).total_seconds()
+            )
+
+            agent_notes = build_agent_notes(
+                session_info.get("scam_type", "UNKNOWN"),
+                session_info["extracted_entities"],
+                "ENGAGED",
+                session_info["message_count"],
+                engagement_duration,
+                scam_analysis,
+            )
+
+            await send_guvi_callback(
+                session_id=session_id,
+                scam_detected=is_scam,
+                total_messages=session_info["message_count"],
+                intelligence=session_info["extracted_entities"],
+                agent_notes=agent_notes,
+                engagement_duration=engagement_duration,
+            )
+
+            session_info["callback_sent"] = True
+            save_session_state(session_id, session_info)
+
     except Exception as e:
-        logger.error(f"❌ Failed to save conversation: {str(e)}")
+        logger.error(f"❌ Failed to process background tasks: {str(e)}")
+        logger.exception("Full error:")
 
 
 @app.post("/honeypot", response_model=HoneyPotResponse)
@@ -240,11 +331,36 @@ async def honeypot_endpoint(
         logger.error("❌ Invalid message text")
         raise HTTPException(status_code=400, detail="Invalid message text")
 
-    # Initialize session if new
-    if session_id not in session_data:
-        session_data[session_id] = {
+    # Load session from database OR create new
+    loaded_session = load_session_state(session_id)
+
+    if loaded_session:
+        # Existing session - restore from database
+        session_info = loaded_session
+        session_info["message_count"] += 1
+        session_info["last_activity_ts"] = time.time()
+        logger.info(
+            f"🔄 Restored existing session: {session_id} (turn {session_info['message_count']})"
+        )
+
+        # Also load accumulated entities from all messages
+        all_entities = get_all_session_entities(session_id)
+        for key in [
+            "bankAccounts",
+            "upiIds",
+            "phishingLinks",
+            "phoneNumbers",
+            "amounts",
+            "suspiciousKeywords",
+        ]:
+            if key in all_entities and all_entities[key]:
+                session_info["extracted_entities"][key] = all_entities[key]
+
+    else:
+        # New session
+        session_info = {
             "start_time": datetime.now(),
-            "message_count": 0,
+            "message_count": 1,
             "extracted_entities": {
                 "bankAccounts": [],
                 "upiIds": [],
@@ -254,17 +370,15 @@ async def honeypot_endpoint(
                 "suspiciousKeywords": [],
             },
             "scam_type": None,
-            "persona_type": "elderly",  # Default
+            "persona_type": "elderly",
             "conversation_ended": False,
-            # New tracking fields
+            "callback_sent": False,
             "last_activity_ts": time.time(),
             "stale_turns": 0,
             "last_entity_count": 0,
         }
-
-    session_info = session_data[session_id]
-    session_info["message_count"] += 1
-    session_info["last_activity_ts"] = time.time()  # Update activity timestamp
+        session_data[session_id] = session_info
+        logger.info(f"✨ Created new session: {session_id}")
 
     # Get conversation history
     history = get_conversation_history(session_id)
@@ -411,18 +525,29 @@ async def honeypot_endpoint(
         response_text = "Ek minute please, thoda confusion ho raha hai."
         persona_id = active_persona
 
-    # Background task - just save to database, no termination logic
+    # Background task - save to database and check if we should send callback
     background_tasks.add_task(
         process_background_tasks,
         session_id,
         scammer_message,
         response_text,
         extracted,
+        session_info,
+        is_scam,
+        scam_analysis,
     )
 
     # Log complete response data
     logger.info(
         f"📤 RESPONSE DATA: {json.dumps({'status': 'success', 'reply': response_text}, indent=2)}"
+    )
+
+    # Log session and entity status
+    logger.info(
+        f"📊 SESSION STATUS - Session: {session_id}, Turn: {session_info['message_count']}, Persona: {active_persona}"
+    )
+    logger.info(
+        f"📊 ENTITIES ACCUMULATED - Banks: {len(session_info['extracted_entities'].get('bankAccounts', []))}, UPIs: {len(session_info['extracted_entities'].get('upiIds', []))}, Links: {len(session_info['extracted_entities'].get('phishingLinks', []))}, Phones: {len(session_info['extracted_entities'].get('phoneNumbers', []))}"
     )
     logger.info(f"✅ Request processed successfully for session: {session_id}")
 
