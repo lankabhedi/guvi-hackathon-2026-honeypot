@@ -32,16 +32,6 @@ class PersonaAgent:
         self.model = "llama-3.1-8b-instant"
         self.session_manager = SessionManager()
 
-    @property
-    def client(self):
-        """Lazy initialization of Groq client"""
-        if self._client is None:
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                raise ValueError("GROQ_API_KEY environment variable not set")
-            self._client = AsyncGroq(api_key=api_key)
-        return self._client
-
         # Rich persona definitions - focus on personality and situation, not physical traits
         self.personas = {
             "elderly": {
@@ -110,6 +100,16 @@ You need everything explained step by step.""",
             "Thoda loud boliye, awaz nahi aa rahi",
             "Main dusre kamre mein jaata hoon, yahan network issue hai",
         ]
+
+    @property
+    def client(self):
+        """Lazy initialization of Groq client"""
+        if self._client is None:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self._client = AsyncGroq(api_key=api_key)
+        return self._client
 
     async def generate_response(
         self,

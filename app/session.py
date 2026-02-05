@@ -26,9 +26,19 @@ class SessionManager:
     def __init__(self, db_path: str = "honeypot.db", context_window_size: int = 10):
         self.db_path = db_path
         self.context_window_size = context_window_size
-        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+        self._client = None
         self.summary_model = "llama-3.1-8b-instant"  # Fast model for summarization
         self._init_tables()
+
+    @property
+    def client(self):
+        """Lazy initialization of Groq client"""
+        if self._client is None:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            self._client = AsyncGroq(api_key=api_key)
+        return self._client
 
     def _init_tables(self):
         """Create session-specific tables if they don't exist"""
