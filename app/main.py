@@ -229,6 +229,83 @@ async def send_guvi_callback(
             json.dump(payload, f, indent=2)
 
 
+# Track active sessions for inactivity monitoring
+active_sessions = {}
+
+
+async def monitor_inactivity_and_callback(
+    session_id: str,
+    session_info: Dict,
+    is_scam: bool,
+    scam_analysis: Dict,
+):
+    """
+    Monitor session for inactivity. If no new message for 30 seconds,
+    assume conversation ended and send callback to GUVI.
+    """
+    INACTIVITY_TIMEOUT = 30  # seconds
+
+    logger.info(
+        f"⏱️  [MONITOR] Started inactivity monitor for session {session_id} (timeout: {INACTIVITY_TIMEOUT}s)"
+    )
+
+    # Wait for inactivity timeout
+    await asyncio.sleep(INACTIVITY_TIMEOUT)
+
+    # Check if callback already sent
+    if session_info.get("callback_sent", False):
+        logger.info(
+            f"📞 [MONITOR] Callback already sent for session {session_id}, skipping"
+        )
+        return
+
+    # Check if session is still active (new message arrived)
+    time_since_last_activity = time.time() - session_info.get("last_activity_ts", 0)
+
+    if time_since_last_activity >= INACTIVITY_TIMEOUT - 2:  # Small buffer
+        logger.info(
+            f"⏰ [MONITOR] Inactivity detected for session {session_id} (inactive for {time_since_last_activity:.1f}s)"
+        )
+        logger.info(f"📞 [MONITOR] Sending GUVI callback for session {session_id}")
+
+        # Calculate engagement metrics
+        engagement_duration = int(
+            (datetime.now() - session_info["start_time"]).total_seconds()
+        )
+
+        # Build agent notes
+        agent_notes = build_agent_notes(
+            session_info.get("scam_type", "UNKNOWN"),
+            session_info["extracted_entities"],
+            "ENGAGED",
+            session_info["message_count"],
+            engagement_duration,
+            scam_analysis,
+        )
+
+        agent_notes += f" | Conversation ended due to inactivity after {session_info['message_count']} turns"
+
+        # Send callback to GUVI
+        await send_guvi_callback(
+            session_id=session_id,
+            scam_detected=is_scam,
+            total_messages=session_info["message_count"],
+            intelligence=session_info["extracted_entities"],
+            agent_notes=agent_notes,
+            engagement_duration=engagement_duration,
+        )
+
+        # Mark callback as sent
+        session_info["callback_sent"] = True
+        save_session_state(session_id, session_info)
+
+        logger.info(f"✅ [MONITOR] Callback completed for session {session_id}")
+    else:
+        logger.info(
+            f"🔄 [MONITOR] Session {session_id} is still active, skipping callback"
+        )
+
+
 async def process_background_tasks(
     session_id: str,
     scammer_message: str,
@@ -240,7 +317,7 @@ async def process_background_tasks(
 ):
     """
     Background task - save conversation and session state to DB.
-    Also check if we should send callback (every 15 turns).
+    Also start inactivity monitor to detect conversation end.
     """
     logger.info(f"🔄 [BACKGROUND] Processing session {session_id}")
 
@@ -255,38 +332,20 @@ async def process_background_tasks(
         save_session_state(session_id, session_info)
         logger.info(f"✅ Session state saved for session {session_id}")
 
-        # Check if we should send callback (every 15 turns)
-        if session_info["message_count"] >= 15 and not session_info.get(
-            "callback_sent", False
+        # Start inactivity monitor (only if not already monitoring this session)
+        if session_id not in active_sessions or not active_sessions[session_id].get(
+            "monitoring", False
         ):
+            active_sessions[session_id] = {"monitoring": True}
+            # Create task to monitor inactivity
+            asyncio.create_task(
+                monitor_inactivity_and_callback(
+                    session_id, session_info, is_scam, scam_analysis
+                )
+            )
             logger.info(
-                f"📞 Sending GUVI callback for session {session_id} (15 turns reached)"
+                f"⏱️  [BACKGROUND] Started inactivity monitor for session {session_id}"
             )
-
-            engagement_duration = int(
-                (datetime.now() - session_info["start_time"]).total_seconds()
-            )
-
-            agent_notes = build_agent_notes(
-                session_info.get("scam_type", "UNKNOWN"),
-                session_info["extracted_entities"],
-                "ENGAGED",
-                session_info["message_count"],
-                engagement_duration,
-                scam_analysis,
-            )
-
-            await send_guvi_callback(
-                session_id=session_id,
-                scam_detected=is_scam,
-                total_messages=session_info["message_count"],
-                intelligence=session_info["extracted_entities"],
-                agent_notes=agent_notes,
-                engagement_duration=engagement_duration,
-            )
-
-            session_info["callback_sent"] = True
-            save_session_state(session_id, session_info)
 
     except Exception as e:
         logger.error(f"❌ Failed to process background tasks: {str(e)}")
