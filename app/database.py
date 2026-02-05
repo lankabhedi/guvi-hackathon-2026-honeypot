@@ -240,19 +240,6 @@ def get_all_session_entities(session_id: str) -> Dict[str, Any]:
 
     return aggregated
 
-    history = []
-    for row in rows:
-        history.append(
-            {
-                "turn_number": row[0],
-                "scammer_message": row[1],
-                "response": row[2],
-                "extracted_entities": row[3],
-            }
-        )
-
-    return history
-
 
 def save_conversation(
     conversation_id: str, scammer_message: str, response: str, entities: Dict[str, Any]
@@ -295,7 +282,7 @@ def save_conversation(
             turn_number,
             scammer_message,
             response,
-            str(entities),
+            json.dumps(entities),  # Use json.dumps for proper JSON
             datetime.now(),
         ),
     )
