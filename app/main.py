@@ -287,19 +287,22 @@ async def monitor_inactivity_and_callback(
     is_scam: bool,
     scam_analysis: Dict,
     monitor_start_ts: float,
+    custom_timeout: Optional[float] = None,
 ):
     """
-    Monitor session for inactivity. If no new message for 15 seconds AFTER THIS MONITOR STARTED,
+    Monitor session for inactivity. If no new message for X seconds AFTER THIS MONITOR STARTED,
     assume conversation ended and send callback to GUVI.
 
     Only fires callback if this is still the active monitor for the session.
     """
+    timeout = custom_timeout if custom_timeout else INACTIVITY_TIMEOUT
+
     logger.info(
-        f"⏱️  [MONITOR] Started inactivity monitor for session {session_id} (timeout: {INACTIVITY_TIMEOUT}s)"
+        f"⏱️  [MONITOR] Started inactivity monitor for session {session_id} (timeout: {timeout:.2f}s)"
     )
 
     # Wait for inactivity timeout
-    await asyncio.sleep(INACTIVITY_TIMEOUT)
+    await asyncio.sleep(timeout)
 
     # Check if this monitor is still the active one
     # If a newer monitor has started, skip this one
@@ -324,7 +327,7 @@ async def monitor_inactivity_and_callback(
     # Check if session is still active (new message arrived AFTER this monitor started)
     time_since_this_monitor_started = time.time() - monitor_start_ts
 
-    if time_since_this_monitor_started >= INACTIVITY_TIMEOUT - 2:  # Small buffer
+    if time_since_this_monitor_started >= timeout - 2:  # Small buffer
         logger.info(
             f"⏰ [MONITOR] Inactivity detected for session {session_id} (inactive for {time_since_this_monitor_started:.1f}s since this monitor started)"
         )
@@ -380,6 +383,88 @@ async def monitor_inactivity_and_callback(
         )
 
 
+def calculate_dynamic_timeout(session_id: str, current_turn: int) -> float:
+    """
+    Calculate dynamic timeout based on average response time.
+
+    Strategy:
+    - Turns < 5: Use default INACTIVITY_TIMEOUT
+    - Turns >= 5: Avg time between messages + 1.5s
+    - Turns >= 20: Immediate callback (very short timeout)
+    """
+    if current_turn >= 20:
+        logger.info(
+            f"⏱️  [TIMEOUT] Max turns reached ({current_turn}), forcing quick callback"
+        )
+        return 0.5  # Almost immediate callback
+
+    if current_turn < 5:
+        return INACTIVITY_TIMEOUT
+
+    try:
+        # Get message timestamps from DB
+        history = get_conversation_history(session_id)
+        if len(history) < 2:
+            return INACTIVITY_TIMEOUT
+
+        # We don't have exact timestamps in the simple history dict returned by get_conversation_history
+        # So we need to query DB directly here for timestamps
+        import sqlite3
+
+        conn = sqlite3.connect("honeypot.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT timestamp FROM messages WHERE conversation_id = ? ORDER BY id ASC",
+            (session_id,),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        if len(rows) < 2:
+            return INACTIVITY_TIMEOUT
+
+        timestamps = []
+        for row in rows:
+            try:
+                # Timestamps might be strings or datetime objects depending on how they were saved
+                ts_val = row[0]
+                if isinstance(ts_val, str):
+                    ts = datetime.fromisoformat(ts_val.replace("Z", "+00:00"))
+                else:
+                    ts = ts_val
+                timestamps.append(ts.timestamp())
+            except Exception:
+                continue
+
+        if len(timestamps) < 2:
+            return INACTIVITY_TIMEOUT
+
+        # Calculate intervals
+        intervals = []
+        for i in range(1, len(timestamps)):
+            diff = timestamps[i] - timestamps[i - 1]
+            if diff > 0 and diff < 60:  # Ignore huge gaps (e.g. server restarts)
+                intervals.append(diff)
+
+        if not intervals:
+            return INACTIVITY_TIMEOUT
+
+        avg_interval = sum(intervals) / len(intervals)
+        dynamic_timeout = avg_interval + 1.5
+
+        # Ensure reasonable bounds (min 3s, max 15s)
+        dynamic_timeout = max(3.0, min(15.0, dynamic_timeout))
+
+        logger.info(
+            f"⏱️  [TIMEOUT] Calculated dynamic timeout: {dynamic_timeout:.2f}s (Avg: {avg_interval:.2f}s + 1.5s)"
+        )
+        return dynamic_timeout
+
+    except Exception as e:
+        logger.error(f"Error calculating dynamic timeout: {e}")
+        return INACTIVITY_TIMEOUT
+
+
 async def process_background_tasks(
     session_id: str,
     scammer_message: str,
@@ -406,6 +491,11 @@ async def process_background_tasks(
         save_session_state(session_id, session_info)
         logger.info(f"✅ Session state saved for session {session_id}")
 
+        # Calculate dynamic timeout
+        dynamic_timeout = calculate_dynamic_timeout(
+            session_id, session_info["message_count"]
+        )
+
         # Always update monitor timestamp and start new monitor on every request
         # This ensures the timer resets after each message
         monitor_start_ts = time.time()
@@ -416,7 +506,12 @@ async def process_background_tasks(
         # Create task to monitor inactivity
         asyncio.create_task(
             monitor_inactivity_and_callback(
-                session_id, session_info, is_scam, scam_analysis, monitor_start_ts
+                session_id,
+                session_info,
+                is_scam,
+                scam_analysis,
+                monitor_start_ts,
+                dynamic_timeout,
             )
         )
         logger.info(
