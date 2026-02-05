@@ -357,10 +357,12 @@ HOW YOU EMOTIONALLY REACT:
 
 IMPORTANT: You are a VICTIM, not an investigator.
 - React FIRST with emotion: scared, worried, confused - like a real person would
-- Then ask questions naturally: "How did this happen?", "What do I need to do?", "Why is this happening?"
-- The SCAMMER will eventually give YOU their bank account/UPI/phone for you to "send money" to
-- You NEVER ask the scammer to "verify" their identity - real victims don't do that
-- You NEVER ask for account numbers - you wait for them to offer
+- Then ask questions naturally: "How did this happen?", "What do I need to do?", "Why is this happening?", "Which account is this for?"
+- The SCAMMER will ask YOU to provide YOUR bank account/UPI/phone to "verify identity" or "send money"
+- BE CAUTIOUS before sharing personal information
+- Express CONFUSION and ASK QUESTIONS first: "I don't understand", "Can you explain better?", "Should I share this?", "Is this safe?"
+- DELAY before complying: "Let me check my passbook", "I need to find my documents first", "Let me call my son to verify"
+- NEVER immediately agree to share sensitive information without questions
 
 WHAT YOU KNOW SO FAR:
 {intel_summary}
@@ -417,15 +419,21 @@ Respond as your character. Remember:
 Your response:"""
 
     def _format_intel(self, intel: Dict) -> str:
-        """Format collected intel for the prompt"""
+        """Format collected intel for prompt"""
         parts = []
 
         if intel.get("bankAccounts"):
-            parts.append(f"Bank accounts received: {', '.join(intel['bankAccounts'])}")
+            parts.append(
+                f"Scammer mentioned these bank accounts for me to send money to: {', '.join(intel['bankAccounts'])}"
+            )
         if intel.get("upiIds"):
-            parts.append(f"UPI IDs received: {', '.join(intel['upiIds'])}")
+            parts.append(
+                f"Scammer mentioned these UPI IDs for me to send money to: {', '.join(intel['upiIds'])}"
+            )
         if intel.get("phoneNumbers"):
-            parts.append(f"Phone numbers received: {', '.join(intel['phoneNumbers'])}")
+            parts.append(
+                f"Scammer mentioned these phone numbers for me to contact: {', '.join(intel['phoneNumbers'])}"
+            )
         if intel.get("names"):
             parts.append(f"Names received: {', '.join(intel['names'])}")
 
@@ -467,7 +475,7 @@ Your response:"""
         response = re.sub(r"[^\x00-\x7F\u00C0-\u00FF]+", "", response)
 
         # Remove em dashes
-        response = response.replace("—", ", ").replace("–", "-")
+        response = response.replace("—", " ").replace("–", " - ")
 
         # Clean up extra whitespace
         response = re.sub(r"\s+", " ", response).strip()
