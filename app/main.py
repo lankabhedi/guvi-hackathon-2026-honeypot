@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Global Constants
 INACTIVITY_TIMEOUT = (
-    6  # seconds - effective 4s wait with 2s buffer to avoid race conditions
+    12  # seconds - increased to allow GUVI time to reply (effective ~10s wait)
 )
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
