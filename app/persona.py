@@ -29,7 +29,7 @@ class PersonaAgent:
 
     def __init__(self):
         self._client = None
-        self.model = "llama-3.1-8b-instant"
+        self.model = "openai/gpt-oss-120b"  # Using OpenAI GPT OSS 120B model
         self.session_manager = SessionManager()
 
         # Rich persona definitions - focus on personality and situation, not physical traits
@@ -165,8 +165,9 @@ You need everything explained step by step.""",
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.85,
-                max_tokens=300,
+                temperature=1,  # Using GPT OSS 120B recommended temperature
+                max_completion_tokens=8192,
+                top_p=1,
             )
 
             content = response.choices[0].message.content or ""

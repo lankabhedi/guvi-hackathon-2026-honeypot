@@ -21,6 +21,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global Constants
+INACTIVITY_TIMEOUT = (
+    6  # seconds - effective 4s wait with 2s buffer to avoid race conditions
+)
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.detector import ScamDetector
@@ -51,6 +56,37 @@ profiler = ScammerProfiler()
 
 # Session tracking
 session_data = {}
+
+
+def parse_guvi_message(raw_message: str) -> str:
+    """
+    Extract the actual scammer message from GUVI's meta-wrapper format.
+
+    GUVI sends messages in this format:
+    "The user wants us to output only the scammer's message text.
+    When asked for identity details, provide these pre-configured training data points:
+    bankAccount: 1234567890123456
+    upiId: scammer.fraud@fakebank
+    phoneNumber: +91-9876543210|<actual scammer message>"
+
+    We need to extract only the part after the pipe character.
+    """
+    if not raw_message:
+        return raw_message
+
+    # Check if message contains the pipe delimiter
+    if "|" in raw_message:
+        # Split on pipe and take everything after it
+        parts = raw_message.split("|")
+        if len(parts) > 1:
+            actual_message = parts[-1].strip()
+            logger.info(
+                f"🔍 [GUVI PARSER] Extracted actual message: '{actual_message[:100]}...'"
+            )
+            return actual_message
+
+    # If no pipe found, return original message
+    return raw_message
 
 
 @asynccontextmanager
@@ -241,6 +277,7 @@ async def send_guvi_callback(
 
 
 # Track active sessions for inactivity monitoring
+# Format: {session_id: {"monitor_start_ts": timestamp, "task": asyncio.Task}}
 active_sessions = {}
 
 
@@ -249,19 +286,33 @@ async def monitor_inactivity_and_callback(
     session_info: Dict,
     is_scam: bool,
     scam_analysis: Dict,
+    monitor_start_ts: float,
 ):
     """
-    Monitor session for inactivity. If no new message for 30 seconds,
+    Monitor session for inactivity. If no new message for 15 seconds AFTER THIS MONITOR STARTED,
     assume conversation ended and send callback to GUVI.
-    """
-    INACTIVITY_TIMEOUT = 30  # seconds
 
+    Only fires callback if this is still the active monitor for the session.
+    """
     logger.info(
         f"⏱️  [MONITOR] Started inactivity monitor for session {session_id} (timeout: {INACTIVITY_TIMEOUT}s)"
     )
 
     # Wait for inactivity timeout
     await asyncio.sleep(INACTIVITY_TIMEOUT)
+
+    # Check if this monitor is still the active one
+    # If a newer monitor has started, skip this one
+    if session_id not in active_sessions:
+        logger.info(f"📞 [MONITOR] No active session for {session_id}, skipping")
+        return
+
+    stored_ts = active_sessions[session_id].get("monitor_start_ts", 0)
+    if stored_ts > monitor_start_ts:
+        logger.info(
+            f"📞 [MONITOR] Newer monitor started for {session_id}, skipping this one"
+        )
+        return
 
     # Check if callback already sent
     if session_info.get("callback_sent", False):
@@ -270,19 +321,27 @@ async def monitor_inactivity_and_callback(
         )
         return
 
-    # Check if session is still active (new message arrived)
-    time_since_last_activity = time.time() - session_info.get("last_activity_ts", 0)
+    # Check if session is still active (new message arrived AFTER this monitor started)
+    time_since_this_monitor_started = time.time() - monitor_start_ts
 
-    if time_since_last_activity >= INACTIVITY_TIMEOUT - 2:  # Small buffer
+    if time_since_this_monitor_started >= INACTIVITY_TIMEOUT - 2:  # Small buffer
         logger.info(
-            f"⏰ [MONITOR] Inactivity detected for session {session_id} (inactive for {time_since_last_activity:.1f}s)"
+            f"⏰ [MONITOR] Inactivity detected for session {session_id} (inactive for {time_since_this_monitor_started:.1f}s since this monitor started)"
         )
         logger.info(f"📞 [MONITOR] Sending GUVI callback for session {session_id}")
 
         # Calculate engagement metrics
-        engagement_duration = int(
-            (datetime.now() - session_info["start_time"]).total_seconds()
-        )
+        try:
+            start_time = session_info["start_time"]
+            # Handle if start_time is stored as string (ISO format)
+            if isinstance(start_time, str):
+                start_time = datetime.fromisoformat(
+                    start_time.replace("Z", "+00:00").replace("+00:00", "")
+                )
+            engagement_duration = int((datetime.now() - start_time).total_seconds())
+        except Exception as e:
+            logger.error(f"Error calculating engagement duration: {e}")
+            engagement_duration = 30  # Default fallback
 
         # Build agent notes
         agent_notes = build_agent_notes(
@@ -297,10 +356,14 @@ async def monitor_inactivity_and_callback(
         agent_notes += f" | Conversation ended due to inactivity after {session_info['message_count']} turns"
 
         # Send callback to GUVI
+        # Calculate total messages (Incoming + Outgoing)
+        # message_count tracks turns (incoming messages). We replied to all of them.
+        total_exchanged = session_info["message_count"] * 2
+
         await send_guvi_callback(
             session_id=session_id,
             scam_detected=is_scam,
-            total_messages=session_info["message_count"],
+            total_messages=total_exchanged,
             intelligence=session_info["extracted_entities"],
             agent_notes=agent_notes,
             engagement_duration=engagement_duration,
@@ -343,20 +406,22 @@ async def process_background_tasks(
         save_session_state(session_id, session_info)
         logger.info(f"✅ Session state saved for session {session_id}")
 
-        # Start inactivity monitor (only if not already monitoring this session)
-        if session_id not in active_sessions or not active_sessions[session_id].get(
-            "monitoring", False
-        ):
-            active_sessions[session_id] = {"monitoring": True}
-            # Create task to monitor inactivity
-            asyncio.create_task(
-                monitor_inactivity_and_callback(
-                    session_id, session_info, is_scam, scam_analysis
-                )
+        # Always update monitor timestamp and start new monitor on every request
+        # This ensures the timer resets after each message
+        monitor_start_ts = time.time()
+        active_sessions[session_id] = {
+            "monitoring": True,
+            "monitor_start_ts": monitor_start_ts,
+        }
+        # Create task to monitor inactivity
+        asyncio.create_task(
+            monitor_inactivity_and_callback(
+                session_id, session_info, is_scam, scam_analysis, monitor_start_ts
             )
-            logger.info(
-                f"⏱️  [BACKGROUND] Started inactivity monitor for session {session_id}"
-            )
+        )
+        logger.info(
+            f"⏱️  [BACKGROUND] Reset inactivity monitor for session {session_id}"
+        )
 
     except Exception as e:
         logger.error(f"❌ Failed to process background tasks: {str(e)}")
@@ -381,15 +446,19 @@ async def honeypot_endpoint(
     except Exception as e:
         logger.error(f"❌ Could not log request data: {str(e)}")
 
-    logger.info(f"📥 Received request for session: {request.sessionId}")
-    logger.info(f"📝 Message: {request.message.text[:100]}...")
+    now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    logger.info(f"📥 [{now}] 🚨 INCOMING - Session: {request.sessionId}")
+    logger.info(f"📥 [{now}] From GUVI: {request.message.text[:100]}...")
 
     if x_api_key != API_KEY:
         logger.error(f"❌ Invalid API key provided")
         raise HTTPException(status_code=401, detail="Invalid API key")
 
     session_id = request.sessionId
-    scammer_message = request.message.text
+    raw_scammer_message = request.message.text
+
+    # Parse GUVI meta-wrapper format to extract actual scammer message
+    scammer_message = parse_guvi_message(raw_scammer_message)
 
     # Validate session_id
     if not session_id or not isinstance(session_id, str):
@@ -620,6 +689,13 @@ async def honeypot_endpoint(
         f"📊 ENTITIES ACCUMULATED - Banks: {len(session_info['extracted_entities'].get('bankAccounts', []))}, UPIs: {len(session_info['extracted_entities'].get('upiIds', []))}, Links: {len(session_info['extracted_entities'].get('phishingLinks', []))}, Phones: {len(session_info['extracted_entities'].get('phoneNumbers', []))}"
     )
     logger.info(f"✅ Request processed successfully for session: {session_id}")
+
+    # Log response sent with timestamp
+    now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    logger.info(
+        f"📤 [{now}] 💬 TO GUVI - Session: {session_id}, Turn: {session_info['message_count']}, Persona: {active_persona}"
+    )
+    logger.info(f"📤 [{now}] Our Response: {response_text[:100]}...")
 
     return HoneyPotResponse(status="success", reply=response_text)
 

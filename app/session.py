@@ -27,7 +27,7 @@ class SessionManager:
         self.db_path = db_path
         self.context_window_size = context_window_size
         self._client = None
-        self.summary_model = "llama-3.1-8b-instant"  # Fast model for summarization
+        self.summary_model = "openai/gpt-oss-120b"  # Using OpenAI GPT OSS 120B model
         self._init_tables()
 
     @property
@@ -264,8 +264,9 @@ class SessionManager:
                         "content": f"Previous summary:\n{current_summary}\n\nNew messages to add to summary:\n{old_convo}\n\nWrite an updated brief summary (2-3 sentences max):",
                     },
                 ],
-                temperature=0.3,
-                max_tokens=200,
+                temperature=1,  # Using GPT OSS 120B recommended temperature
+                max_completion_tokens=8192,
+                top_p=1,
             )
 
             new_summary = response.choices[0].message.content or ""

@@ -9,7 +9,7 @@ class EntityExtractor:
 
     def __init__(self):
         self._client = None
-        self.model = "llama-3.1-8b-instant"
+        self.model = "openai/gpt-oss-120b"  # Using OpenAI GPT OSS 120B model
 
     @property
     def client(self):
@@ -41,11 +41,12 @@ Extract ALL bank accounts, UPI IDs, phone numbers, links, and suspicious keyword
 Look for patterns like:
 - bankAccount: 1234567890123456
 - upiId: scammer@upi
-- phoneNumber: +91-XXXXXXXXXX
+- phoneNumber: +XX-XXXXXXXXXX (EXTRACT EXACTLY AS WRITTEN, KEEP COUNTRY CODE)
 - phishing link: http://example.com
 - suspicious keyword: urgent, verify, blocked
 
 Extract the VALUES, not the field names.
+IMPORTANT: For phone numbers, PRESERVE the full format including ANY country code and hyphens (e.g. "+91-...", "+1-...", "+44-..."). Do not strip the prefix.
 
 Return this exact JSON structure:
 {{
@@ -87,30 +88,63 @@ Return ONLY the JSON, no markdown."""
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.6,  # Qwen 3 Thinking Mode
-                max_tokens=2048,  # Needs space to think
-                # reasoning_format="parsed" # REMOVED due to library incompatibility
+                temperature=1,  # Using GPT OSS 120B recommended temperature
+                max_completion_tokens=8192,
+                top_p=1,
             )
 
             content = (response.choices[0].message.content or "").strip()
 
-            # Clean <think> tags for extractor too
+            # COMPREHENSIVE LOGGING: Log raw LLM output
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"🧠 [EXTRACTOR] 🔍 RAW LLM OUTPUT:\n{'=' * 60}\n{content}\n{'=' * 60}"
+            )
+
+            # Clean thinking tags
             import re
 
-            result_text = re.sub(
-                r"<think>.*?</think>", "", content, flags=re.DOTALL
-            ).strip()
+            result_text = re.sub(r"<thinking>.*?", "", content, flags=re.DOTALL).strip()
+
+            # Clean markdown code blocks (NEW)
+            result_text = re.sub(r"```json\s*", "", result_text, flags=re.IGNORECASE)
+            result_text = re.sub(r"```\s*$", "", result_text, flags=re.MULTILINE)
+            result_text = result_text.strip()
+
+            # Log cleaned output
+            logger.info(
+                f"🧠 [EXTRACTOR] 🧹 CLEANED OUTPUT:\n{'=' * 60}\n{result_text}\n{'=' * 60}"
+            )
 
             try:
                 extracted = json.loads(result_text)
-            except json.JSONDecodeError:
+                logger.info(
+                    f"✅ [EXTRACTOR] ✨ PARSED JSON SUCCESSFULLY:\n{json.dumps(extracted, indent=2)}"
+                )
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ [EXTRACTOR] JSON DECODE FAILED! Error: {e}")
+                logger.error(
+                    f"❌ [EXTRACTOR] Attempting fallback extraction using regex..."
+                )
                 extracted = self._fallback_extraction(current_message)
 
             # Flatten for GUVI format
             flattened = self._flatten_for_guvi(extracted)
+            logger.info(
+                f"🧠 [EXTRACTOR] 📦 FINAL FLATTENED OUTPUT:\n{json.dumps(flattened, indent=2)}"
+            )
             return flattened
 
         except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"❌ [EXTRACTOR] ❌ EXCEPTION IN EXTRACTION: {str(e)}", exc_info=True
+            )
+            logger.error(f"❌ [EXTRACTOR] Using fallback extraction due to exception")
             return self._fallback_extraction(current_message)
 
     def _build_conversation_text(
@@ -213,7 +247,8 @@ Return ONLY the JSON, no markdown."""
         }
 
         # Bank accounts (11-18 digits, excluding 10-digit phone numbers)
-        bank_matches = re.findall(r"\b\d{11,18}\b", message)
+        # Using negative lookbehind to avoid matching within longer numbers
+        bank_matches = re.findall(r"(?<!\d)\d{11,18}(?!\d)", message)
         result["bankAccounts"] = bank_matches
 
         # UPI IDs
@@ -224,9 +259,23 @@ Return ONLY the JSON, no markdown."""
         url_matches = re.findall(r'https?://[^\s<>"{}|^`[\]]+', message)
         result["phishingLinks"] = url_matches
 
-        # Phone numbers
-        phone_matches = re.findall(r"(?:\+91)?\s*[6-9]\d{9}", message)
+        # Phone numbers - UPDATED to preserve +91- format and avoid false positives
+        # Match: +91-XXXXXXXXXX, +91 XXXXX XXXXX, or plain 10-digit numbers starting with 6-9
+        # Using lookaround for boundaries to handle + sign correctly
+        phone_matches = re.findall(
+            r"(?<!\d)\+91[\s-]*[6-9]\d{9}(?!\d)|(?<!\d)[6-9]\d{9}(?!\d)", message
+        )
         result["phoneNumbers"] = phone_matches
+
+        # Log what regex found
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"🔧 [FALLBACK] Regex extraction - Banks: {len(result['bankAccounts'])}, "
+            f"UPIs: {len(result['upiIds'])}, Phones: {result['phoneNumbers']}, "
+            f"Links: {len(result['phishingLinks'])}"
+        )
 
         return result
 

@@ -9,7 +9,7 @@ class ScamDetector:
 
     def __init__(self):
         self._client = None
-        self.model = "llama-3.1-8b-instant"
+        self.model = "openai/gpt-oss-120b"  # Using OpenAI GPT OSS 120B model
 
     @property
     def client(self):
@@ -81,9 +81,9 @@ Respond with ONLY the JSON, no other text."""
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.6,  # Recommended for Qwen 3 Thinking Mode
-                max_tokens=2048,  # Thinking needs more tokens
-                # reasoning_format="parsed",  # REMOVED due to library incompatibility
+                temperature=1,  # Using GPT OSS 120B recommended temperature
+                max_completion_tokens=8192,
+                top_p=1,
             )
 
             # Log reasoning for debugging if available
