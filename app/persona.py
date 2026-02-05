@@ -189,6 +189,9 @@ You need everything explained step by step.""",
 
         except Exception as e:
             print(f"AGENT ERROR: {e}")
+            print(
+                f"GROQ_API_KEY set: {'Yes' if os.getenv('GROQ_API_KEY') else 'NO - MISSING!'}"
+            )
             import traceback
 
             traceback.print_exc()
