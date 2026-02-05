@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Expose the port that the app runs on (Render uses 10000 by default)
-EXPOSE 10000
+# Expose port (Railway uses dynamic PORT env variable)
+EXPOSE 8080
 
-# Define the command to run the app
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10000"]
+# Define the command to run the app (Railway sets PORT env variable)
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
