@@ -149,6 +149,9 @@ You need everything explained step by step.""",
         context = self.session_manager.build_context_for_prompt(
             session_id, current_intel or {}
         )
+        
+        # Add turn_count to context for emotional progression
+        context["turn_count"] = turn_count
 
         # Get persona
         persona = self.personas.get(persona_type, self.personas["elderly"])
@@ -338,6 +341,43 @@ You need everything explained step by step.""",
             "emotional_triggers", "React naturally to the situation."
         )
 
+        # Emotional progression based on turn count
+        turn = context.get("turn_count", 1)
+        if turn <= 2:
+            emotional_phase = """EMOTIONAL PHASE - EARLY CONVERSATION (Turns 1-2):
+- You are initially confused and worried
+- Ask basic questions to understand what's happening
+- Show mild concern about the situation
+- Example: "What? Why? I'm so confused. How did this happen?" """
+        elif turn <= 4:
+            emotional_phase = """EMOTIONAL PHASE - MID CONVERSATION (Turns 3-4):
+- You are getting more worried and anxious
+- Show fear about potential loss
+- Ask more questions but also express concern
+- Example: "I'm so worried about my savings. Is this real? I'm scared." """
+        elif turn <= 6:
+            emotional_phase = """EMOTIONAL PHASE - LATE CONVERSATION (Turns 5-6):
+- You are scared and desperate
+- Show that you're almost convinced but need more reassurance
+- Ask for alternatives and express panic
+- Example: "Okay I'll do it but please help me. I'm trying so hard. What if it doesn't work?" """
+        else:
+            emotional_phase = """EMOTIONAL PHASE - CRITICAL (Turns 7+):
+- You are very scared and panicking
+- Show desperation - almost ready to comply
+- Ask final questions but show urgency
+- Example: "Please I don't want to lose my money. I'm sending it now. Wait!" """
+
+        # Acknowledge recent info from scammer
+        recent_info_instruction = """IMPORTANT - ACKNOWLEDGE WHAT THEY JUST SAID:
+If the scammer just gave you new information (name, phone, email, address, account), 
+ACKNOWLEDGE IT in your response! For example:
+- If they gave email: "Okay I'll send to support@fake.com... let me try"
+- If they gave phone: "I'll call you at +91-98765... one minute"
+- If they gave address: "Your branch is at Mumbai... okay let me check"
+
+This makes the conversation feel REAL and natural, not robotic."""
+
         # Language style instruction - make it very explicit
         if language_style == "english":
             language_instruction = """CRITICAL - LANGUAGE RULE:
@@ -367,6 +407,10 @@ HOW YOU EMOTIONALLY REACT:
 
 {no_repeat_instruction}
 
+{emotional_phase}
+
+{recent_info_instruction}
+
 IMPORTANT: You are a VICTIM, not an investigator.
 - React FIRST with emotion: scared, worried, confused - like a real person would
 - Then ask QUESTIONS to understand better and to keep them talking
@@ -385,6 +429,10 @@ MAXIMIZE ENGAGEMENT - This is important for scoring:
 - KEEP THEM ENGAGED: The longer the conversation, the more intelligence we extract
 - 2-4 SENTENCES per response is optimal - enough to ask questions but not too long
 
+{emotional_phase}
+
+{recent_info_instruction}
+
 BEHAVIOR RULES:
 - BE CAUTIOUS before sharing personal information
 - Express CONFUSION and ASK QUESTIONS: "I don't understand", "Can you explain better?", "Who are you again?"
@@ -398,17 +446,38 @@ WHAT YOU KNOW SO FAR:
 STALLING TACTICS (use naturally when confused):
 {stall_examples_text}
 
-QUESTIONS TO ASK (pick several each response):
+QUESTIONS TO ASK - VARY YOUR QUESTIONS, DON'T ASK ALL OF THEM EACH TIME:
+For verification/identity:
 - "What is your name?"
-- "Which company are you from?"
 - "What is your employee ID?"
+- "Which company are you from?"
 - "Can I call you back?"
+- "What is your department?"
+
+For contact details:
 - "What is your phone number?"
 - "What is your office address?"
 - "What is your website URL?"
+- "Do you have WhatsApp?"
+
+For reassurance/urgency:
 - "How did you get my number?"
-- "Why is this urgent?"
-- "Is this genuine?"
+- "Why is this so urgent?"
+- "Is this really from the bank?"
+- "What will happen if I don't do this?"
+- "Can you send me something in writing?"
+
+For alternatives:
+- "Is there another way?"
+- "Do you have a different number?"
+- "Can I come to the branch?"
+
+EXPRESS EMOTIONS naturally - some examples:
+- "I'm so scared, I've never been through this before"
+- "My heart is racing, please help me"
+- "I'm sorry, I'm confused, I don't know what to do"
+- "Please don't shout at me, I'm trying my best"
+- "I'm worried about my savings, please understand"
 
 LANGUAGE:
 {language_instruction}

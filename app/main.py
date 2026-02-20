@@ -900,20 +900,59 @@ async def honeypot_endpoint(
 
     except asyncio.TimeoutError:
         logger.error("❌ Persona response generation timed out")
-        # Fallback response based on persona
-        fallback_responses = {
-            "elderly": "Beta, thoda samajh nahi aa raha. Aap phir se bata sakte ho?",
-            "homemaker": "Ek minute, main confuse ho gayi. Phir se samjhana?",
-            "student": "Sorry bro, network issue hai. Repeat karna?",
-            "naive_girl": "Sir, mujhe samajh nahi aaya. Aap phir se bataiye?",
-        }
-        response_text = fallback_responses.get(
-            active_persona, "Thoda ruko, samajh nahi aa raha."
-        )
+        # Fallback responses - varied based on turn count to avoid repetition
+        import random
+        turn = session_info.get("message_count", 1)
+        
+        fallback_responses_elderly = [
+            "Beta, thoda samajh nahi aa raha. Aap phir se bata sakte ho?",
+            "Arre, confusion ho raha hai. Thoda dheere bataiye na?",
+            "Ji, main bujho gayi. Ek minute, apni beti se pooch ke bolti hoon.",
+            "Sirji, kya aap fir se bata sakte hain? Network problem ho raha hai.",
+            "Beta, phone ka signal nahi aa raha. Dusre number par call kijiye.",
+            "Arre, main darr gayi. Thoda time dijiye, heart tez ho raha hai.",
+            "Ji, main apne beta ko dikhati hoon. Ek minute lagega.",
+        ]
+        fallback_responses_homemaker = [
+            "Ek minute, main confuse ho gayi. Phir se samjhana?",
+            "Arre, kya bol rahe ho? Thoda dheere boliye.",
+            "Ji, wait kijiye. Main apne husband se pooch ke bolti hoon.",
+            "Sorry, network issue hai. Repeat karna?",
+        ]
+        fallback_responses_student = [
+            "Sorry bro, network issue hai. Repeat karna?",
+            "Arre yaar, phone hang ho gaya. Thoda wait karo.",
+            "Bro, kya bol rahe ho? Clarity nahi aa rahi.",
+            "Dude, slow down. Samajh nahi aaya.",
+        ]
+        fallback_responses_naive = [
+            "Sir, mujhe samajh nahi aaya. Aap phir se bataiye?",
+            "Arre, confusion ho gaya. Thoda dheere se explain kijiye.",
+            "Ji, main nervous ho gayi. Ek minute lijiye.",
+        ]
+        
+        # Select based on persona
+        if active_persona == "elderly":
+            response_text = random.choice(fallback_responses_elderly)
+        elif active_persona == "homemaker":
+            response_text = random.choice(fallback_responses_homemaker)
+        elif active_persona == "student":
+            response_text = random.choice(fallback_responses_student)
+        else:
+            response_text = random.choice(fallback_responses_naive)
+        
         persona_id = active_persona
+        
     except Exception as e:
         logger.error(f"❌ Error generating persona response: {str(e)}")
-        response_text = "Ek minute please, thoda confusion ho raha hai."
+        import random
+        fallback_generic = [
+            "Ek minute please, thoda confusion ho raha hai.",
+            "Ji, thoda time dijiye. Samajh nahi aa raha.",
+            "Arre, kya bol rahe ho? Dheere bataiye.",
+            "Sorry, network problem ho raha hai.",
+        ]
+        response_text = random.choice(fallback_generic)
         persona_id = active_persona
 
     # Track conversation quality metrics
