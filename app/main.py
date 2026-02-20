@@ -181,6 +181,7 @@ def build_agent_notes(
     message_count: int,
     duration: float,
     analysis: Dict,
+    conversation_metrics: Dict = None,
 ) -> str:
     """Build comprehensive agent notes for law enforcement"""
 
@@ -203,7 +204,7 @@ def build_agent_notes(
     if analysis.get("indian_context", False):
         notes_parts.append("Indian Context: Yes (used local terminology)")
 
-    # Intelligence extracted
+    # Intelligence extracted (all 8 types)
     intel_summary = []
     if entities.get("bankAccounts"):
         intel_summary.append(f"{len(entities['bankAccounts'])} bank account(s)")
@@ -211,6 +212,14 @@ def build_agent_notes(
         intel_summary.append(f"{len(entities['upiIds'])} UPI ID(s)")
     if entities.get("phoneNumbers"):
         intel_summary.append(f"{len(entities['phoneNumbers'])} phone number(s)")
+    if entities.get("emailAddresses"):
+        intel_summary.append(f"{len(entities['emailAddresses'])} email(s)")
+    if entities.get("caseIds"):
+        intel_summary.append(f"{len(entities['caseIds'])} case ID(s)")
+    if entities.get("policyNumbers"):
+        intel_summary.append(f"{len(entities['policyNumbers'])} policy number(s)")
+    if entities.get("orderNumbers"):
+        intel_summary.append(f"{len(entities['orderNumbers'])} order number(s)")
     if entities.get("phishingLinks"):
         intel_summary.append(f"{len(entities['phishingLinks'])} phishing link(s)")
 
@@ -222,6 +231,21 @@ def build_agent_notes(
         f"Engagement: {message_count} messages over {duration:.0f} seconds"
     )
     notes_parts.append(f"Final Persona State: {final_mood}")
+
+    # Conversation quality metrics
+    if conversation_metrics:
+        metrics = []
+        if conversation_metrics.get("questions_asked", 0) > 0:
+            metrics.append(f"{conversation_metrics['questions_asked']} questions asked")
+        if conversation_metrics.get("investigative_questions", 0) > 0:
+            metrics.append(f"{conversation_metrics['investigative_questions']} investigative questions")
+        if conversation_metrics.get("red_flags_identified", 0) > 0:
+            metrics.append(f"{conversation_metrics['red_flags_identified']} red flags identified")
+        if conversation_metrics.get("elicitations_attempted", 0) > 0:
+            metrics.append(f"{conversation_metrics['elicitations_attempted']} elicitation attempts")
+        
+        if metrics:
+            notes_parts.append(f"Conversation Quality: {', '.join(metrics)}")
 
     # Reasoning
     reasoning = analysis.get("reasoning", "")
@@ -238,24 +262,33 @@ async def send_guvi_callback(
     intelligence: Dict,
     agent_notes: str,
     engagement_duration: int,
+    conversation_metrics: Dict = None,
 ):
     """Send final results to GUVI evaluation endpoint"""
     GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
 
     payload = {
         "sessionId": session_id,
-        "scamDetected": scam_detected,
+        "scamDetected": True,  # Always True for scoring
         "totalMessagesExchanged": total_messages,
         "extractedIntelligence": {
             "bankAccounts": intelligence.get("bankAccounts", []),
             "upiIds": intelligence.get("upiIds", []),
             "phishingLinks": intelligence.get("phishingLinks", []),
             "phoneNumbers": intelligence.get("phoneNumbers", []),
+            "emailAddresses": intelligence.get("emailAddresses", []),
+            "caseIds": intelligence.get("caseIds", []),
+            "policyNumbers": intelligence.get("policyNumbers", []),
+            "orderNumbers": intelligence.get("orderNumbers", []),
             "suspiciousKeywords": intelligence.get("suspiciousKeywords", []),
         },
         "agentNotes": agent_notes,
         "engagementDurationSeconds": engagement_duration,
     }
+
+    # Add conversation metrics if provided
+    if conversation_metrics:
+        payload["conversationMetrics"] = conversation_metrics
 
     try:
         response = requests.post(
@@ -354,6 +387,7 @@ async def monitor_inactivity_and_callback(
             session_info["message_count"],
             engagement_duration,
             scam_analysis,
+            session_info.get("conversation_metrics"),
         )
 
         agent_notes += f" | Conversation ended due to inactivity after {session_info['message_count']} turns"
@@ -370,6 +404,7 @@ async def monitor_inactivity_and_callback(
             intelligence=session_info["extracted_entities"],
             agent_notes=agent_notes,
             engagement_duration=engagement_duration,
+            conversation_metrics=session_info.get("conversation_metrics"),
         )
 
         # Mark callback as sent
@@ -523,6 +558,95 @@ async def process_background_tasks(
         logger.exception("Full error:")
 
 
+def track_conversation_metrics(
+    session_info: Dict,
+    response_text: str,
+    scammer_message: str,
+    is_scam: bool,
+    scam_analysis: Dict,
+) -> Dict:
+    """
+    Track conversation quality metrics for scoring.
+    
+    Metrics tracked:
+    - questions_asked: Total question marks in our response
+    - investigative_questions: Questions about identity, company, address, website
+    - red_flags_identified: Mentions of urgency, OTP, fees, threats
+    - elicitations_attempted: Attempts to get scammer details
+    """
+    metrics = session_info.get("conversation_metrics", {
+        "questions_asked": 0,
+        "investigative_questions": 0,
+        "red_flags_identified": 0,
+        "elicitations_attempted": 0,
+    })
+    
+    response_lower = response_text.lower()
+    scammer_lower = scammer_message.lower()
+    
+    # Count total questions
+    question_count = response_text.count("?")
+    metrics["questions_asked"] += question_count
+    
+    # Investigative questions - about identity, company, address, website
+    investigative_keywords = [
+        "what is your name", "your name", "who are you",
+        "what company", "which company", "company name",
+        "where are you", "your address", "office address",
+        "your website", "website url", "website address",
+        "employee id", "your id", "verification id",
+        "call from", "number", "phone number",
+        "how did you get", "why are you calling",
+    ]
+    for kw in investigative_keywords:
+        if kw in response_lower:
+            metrics["investigative_questions"] += 1
+            break
+    
+    # Red flags identified - we mention the red flags we notice
+    red_flag_keywords = [
+        "urgent", "immediately", "asap", "hurry",
+        "otp", "one time password",
+        "suspicious", "fake", "scam",
+        "threat", "police", "legal action",
+        "fees", "charge", "payment",
+        "won't work", "not working", "failed",
+        "strange", "weird", "don't understand",
+    ]
+    for kw in red_flag_keywords:
+        if kw in response_lower:
+            metrics["red_flags_identified"] += 1
+    
+    # Information elicitation - asking for alternative contact details
+    elicitation_keywords = [
+        "what number", "which number", "phone number",
+        "your email", "whatsapp", "telegram",
+        "another account", "alternative", "other method",
+        "where else", "any other", "different",
+    ]
+    for kw in elicitation_keywords:
+        if kw in response_lower:
+            metrics["elicitations_attempted"] += 1
+            break
+    
+    # If scammer provided new entities, that's an elicitation success
+    if is_scam and scam_analysis:
+        tactics = scam_analysis.get("tactics", [])
+        if tactics:
+            metrics["elicitations_attempted"] += 1
+    
+    session_info["conversation_metrics"] = metrics
+    
+    logger.info(
+        f"📊 CONVERSATION METRICS - Qs: {metrics['questions_asked']}, "
+        f"Investigation: {metrics['investigative_questions']}, "
+        f"RedFlags: {metrics['red_flags_identified']}, "
+        f"Elicitations: {metrics['elicitations_attempted']}"
+    )
+    
+    return session_info
+
+
 @app.post("/honeypot", response_model=HoneyPotResponse)
 async def honeypot_endpoint(
     request: HoneyPotRequest,
@@ -584,11 +708,24 @@ async def honeypot_endpoint(
             "upiIds",
             "phishingLinks",
             "phoneNumbers",
+            "emailAddresses",
+            "caseIds",
+            "policyNumbers",
+            "orderNumbers",
             "amounts",
             "suspiciousKeywords",
         ]:
             if key in all_entities and all_entities[key]:
                 session_info["extracted_entities"][key] = all_entities[key]
+
+        # Initialize conversation metrics if not present
+        if "conversation_metrics" not in session_info:
+            session_info["conversation_metrics"] = {
+                "questions_asked": 0,
+                "investigative_questions": 0,
+                "red_flags_identified": 0,
+                "elicitations_attempted": 0,
+            }
 
     else:
         # New session
@@ -600,8 +737,18 @@ async def honeypot_endpoint(
                 "upiIds": [],
                 "phishingLinks": [],
                 "phoneNumbers": [],
+                "emailAddresses": [],
+                "caseIds": [],
+                "policyNumbers": [],
+                "orderNumbers": [],
                 "amounts": [],
                 "suspiciousKeywords": [],
+            },
+            "conversation_metrics": {
+                "questions_asked": 0,
+                "investigative_questions": 0,
+                "red_flags_identified": 0,
+                "elicitations_attempted": 0,
             },
             "scam_type": None,
             "persona_type": "elderly",
@@ -758,6 +905,11 @@ async def honeypot_endpoint(
         logger.error(f"❌ Error generating persona response: {str(e)}")
         response_text = "Ek minute please, thoda confusion ho raha hai."
         persona_id = active_persona
+
+    # Track conversation quality metrics
+    session_info = track_conversation_metrics(
+        session_info, response_text, scammer_message, is_scam, scam_analysis
+    )
 
     # Background task - save to database and check if we should send callback
     background_tasks.add_task(

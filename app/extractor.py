@@ -36,14 +36,18 @@ CONVERSATION:
 {conversation_text}
 
 INSTRUCTIONS:
-Extract ALL bank accounts, UPI IDs, phone numbers, links, and suspicious keywords you see in the text.
+Extract ALL bank accounts, UPI IDs, phone numbers, links, emails, case IDs, policy numbers, order numbers, and suspicious keywords you see in the text.
 
 Look for patterns like:
-- bankAccount: 1234567890123456
+- bankAccount: 1234567890123456 (11-18 digits)
 - upiId: scammer@upi
 - phoneNumber: +XX-XXXXXXXXXX (EXTRACT EXACTLY AS WRITTEN, KEEP COUNTRY CODE)
-- phishing link: http://example.com
-- suspicious keyword: urgent, verify, blocked
+- email: scammer@example.com
+- caseId: CV/2026/12345 or any case/reference number
+- policyNumber: POL-123456789 or any policy/reference number
+- orderNumber: ORD-123456 or any order ID
+- phishing link: http://example.com or https://fake-bank.com
+- suspicious keyword: urgent, verify, blocked, otp, kyc
 
 Extract the VALUES, not the field names.
 IMPORTANT: For phone numbers, PRESERVE the full format including ANY country code and hyphens (e.g. "+91-...", "+1-...", "+44-..."). Do not strip the prefix.
@@ -59,7 +63,7 @@ Return this exact JSON structure:
     "contact": {{
         "phone_numbers": ["+91-9876543210"],
         "whatsapp_numbers": [],
-        "emails": [],
+        "emails": ["scammer@example.com"],
         "telegram_handles": []
     }},
     "infrastructure": {{
@@ -70,9 +74,12 @@ Return this exact JSON structure:
     "operational": {{
         "amounts": [],
         "reference_numbers": [],
+        "case_ids": ["CV/2026/12345"],
+        "policy_numbers": ["POL-123456"],
+        "order_numbers": ["ORD-987654"],
         "organization_claimed": "SBI Bank"
     }},
-    "extraction_summary": "Extracted 1 bank account, 1 UPI ID, 1 phone number"
+    "extraction_summary": "Extracted 1 bank account, 1 UPI ID, 1 phone number, 1 email"
 }}
 
 If no entities found, return empty arrays.
@@ -173,6 +180,10 @@ Return ONLY the JSON, no markdown."""
             "upiIds": [],
             "phishingLinks": [],
             "phoneNumbers": [],
+            "emailAddresses": [],
+            "caseIds": [],
+            "policyNumbers": [],
+            "orderNumbers": [],
             "suspiciousKeywords": [],
             "amounts": [],
             "referenceNumbers": [],
@@ -234,6 +245,37 @@ Return ONLY the JSON, no markdown."""
 
         flattened["organizationClaimed"] = operational.get("organization_claimed", "")
 
+        # Extract case IDs, policy numbers, order numbers from operational
+        for case_id in operational.get("case_ids", []):
+            if isinstance(case_id, dict):
+                if case_id.get("confidence", 0) > 0.6:
+                    flattened["caseIds"].append(case_id["value"])
+            elif isinstance(case_id, str):
+                flattened["caseIds"].append(case_id)
+
+        for pol_num in operational.get("policy_numbers", []):
+            if isinstance(pol_num, dict):
+                if pol_num.get("confidence", 0) > 0.6:
+                    flattened["policyNumbers"].append(pol_num["value"])
+            elif isinstance(pol_num, str):
+                flattened["policyNumbers"].append(pol_num)
+
+        for ord_num in operational.get("order_numbers", []):
+            if isinstance(ord_num, dict):
+                if ord_num.get("confidence", 0) > 0.6:
+                    flattened["orderNumbers"].append(ord_num["value"])
+            elif isinstance(ord_num, str):
+                flattened["orderNumbers"].append(ord_num)
+
+        # Extract emails from contact
+        contact = extracted.get("contact", {})
+        for email in contact.get("emails", []):
+            if isinstance(email, dict):
+                if email.get("confidence", 0) > 0.6:
+                    flattened["emailAddresses"].append(email["value"])
+            elif isinstance(email, str):
+                flattened["emailAddresses"].append(email)
+
         # What they asked for
         victim = extracted.get("victim_targeted", {})
         flattened["infoRequested"] = victim.get("info_requested", [])
@@ -241,7 +283,7 @@ Return ONLY the JSON, no markdown."""
         # Suspicious keywords from summary
         summary = extracted.get("extraction_summary", "")
         if summary:
-            keywords = ["urgent", "immediately", "blocked", "verify", "upi", "account"]
+            keywords = ["urgent", "immediately", "blocked", "verify", "upi", "account", "otp", "kyc", "suspended", "suspended"]
             for kw in keywords:
                 if kw in summary.lower():
                     flattened["suspiciousKeywords"].append(kw)
@@ -257,6 +299,10 @@ Return ONLY the JSON, no markdown."""
             "upiIds": [],
             "phishingLinks": [],
             "phoneNumbers": [],
+            "emailAddresses": [],
+            "caseIds": [],
+            "policyNumbers": [],
+            "orderNumbers": [],
             "suspiciousKeywords": [],
             "amounts": [],
             "referenceNumbers": [],
@@ -286,6 +332,22 @@ Return ONLY the JSON, no markdown."""
         )
         result["phoneNumbers"] = phone_matches
 
+        # Email addresses
+        email_matches = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', message)
+        result["emailAddresses"] = email_matches
+
+        # Case IDs - various formats: CV/2026/12345, Case-123456, case id: ABC123
+        case_matches = re.findall(r'(?i)(?:case[-\s]?(?:id|number)?|cv[/\s]?\d+)[:\s]*([A-Z0-9/\-]+)', message)
+        result["caseIds"] = case_matches
+
+        # Policy numbers - various formats: POL-123456, Policy#123456
+        policy_matches = re.findall(r'(?i)(?:policy[#\s-]?(?:no|number)?|pol[/\s]?\d+)[:\s]*([A-Z0-9/\-]+)', message)
+        result["policyNumbers"] = policy_matches
+
+        # Order numbers - various formats: ORD-123456, Order#123456
+        order_matches = re.findall(r'(?i)(?:order[#\s-]?(?:no|number)?|ord[/\s]?\d+)[:\s]*([A-Z0-9/\-]+)', message)
+        result["orderNumbers"] = order_matches
+
         # Log what regex found
         import logging
 
@@ -293,6 +355,8 @@ Return ONLY the JSON, no markdown."""
         logger.info(
             f"🔧 [FALLBACK] Regex extraction - Banks: {len(result['bankAccounts'])}, "
             f"UPIs: {len(result['upiIds'])}, Phones: {result['phoneNumbers']}, "
+            f"Emails: {len(result['emailAddresses'])}, CaseIds: {len(result['caseIds'])}, "
+            f"PolicyNums: {len(result['policyNumbers'])}, OrderNums: {len(result['orderNumbers'])}, "
             f"Links: {len(result['phishingLinks'])}"
         )
 

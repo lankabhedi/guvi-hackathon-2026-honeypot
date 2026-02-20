@@ -222,6 +222,10 @@ def get_all_session_entities(session_id: str) -> Dict[str, Any]:
         "upiIds": [],
         "phishingLinks": [],
         "phoneNumbers": [],
+        "emailAddresses": [],
+        "caseIds": [],
+        "policyNumbers": [],
+        "orderNumbers": [],
         "amounts": [],
         "suspiciousKeywords": [],
     }
