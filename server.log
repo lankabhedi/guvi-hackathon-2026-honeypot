@@ -1,25 +1,53 @@
-/home/samnitmehandiratta/honey-pot-api/app/main.py:64: DeprecationWarning: 
-        on_event is deprecated, use lifespan event handlers instead.
-
-        Read more about it in the
-        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
-        
-  @app.on_event("startup")
-INFO:     Started server process [732183]
+INFO:     Started server process [605883]
 INFO:     Waiting for application startup.
+2026-02-05 17:13:32,268 - INFO - 🚀 Starting up Agentic Honey-Pot API...
+2026-02-05 17:13:32,268 - INFO - 📋 Python version: 3.13.7 (main, Jan  8 2026, 12:15:45) [GCC 15.2.0]
+2026-02-05 17:13:32,268 - INFO - 📋 Working directory: /home/samnitmehandiratta/honey-pot-api
+2026-02-05 17:13:32,268 - INFO - 📋 GROQ_API_KEY set: Yes
+2026-02-05 17:13:32,268 - INFO - 📋 API_KEY set: Yes
+2026-02-05 17:13:32,269 - INFO - ✅ Database initialized
+2026-02-05 17:13:32,269 - INFO - ✅ Startup complete - ready to receive requests
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
-INFO:     127.0.0.1:60042 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59658 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:59660 - "POST /honeypot HTTP/1.1" 200 OK
-✅ GUVI Callback sent: 200
-INFO:     127.0.0.1:59674 - "POST /honeypot HTTP/1.1" 200 OK
-✅ GUVI Callback sent: 200
-INFO:     127.0.0.1:59682 - "POST /honeypot HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51704 - "POST /honeypot HTTP/1.1" 200 OK
-✅ GUVI Callback sent: 200
-INFO:     127.0.0.1:58096 - "POST /honeypot HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53978 - "POST /honeypot HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37716 - "POST /honeypot HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54030 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54040 - "POST /honeypot HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "GET /health HTTP/1.1" 200 OK
+2026-02-05 17:20:45,991 - INFO - 📥 RAW REQUEST DATA:
+{
+  "sessionId": "test-local-123",
+  "message": {
+    "sender": "scammer",
+    "text": "Hello, this is from bank. Share your OTP please.",
+    "timestamp": 1770005528731
+  },
+  "conversationHistory": [],
+  "metadata": {
+    "channel": "SMS",
+    "language": "English",
+    "locale": "IN"
+  }
+}
+2026-02-05 17:20:45,991 - INFO - 📥 Received request for session: test-local-123
+2026-02-05 17:20:45,991 - INFO - 📝 Message: Hello, this is from bank. Share your OTP please....
+2026-02-05 17:20:45,991 - INFO - ✨ Created new session: test-local-123
+2026-02-05 17:20:46,510 - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-05 17:20:46,725 - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-05 17:20:46,726 - INFO - 🔍 Scam detection: is_scam=True, confidence=0.80
+2026-02-05 17:20:47,005 - INFO - HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-02-05 17:20:47,016 - INFO - 💬 Generated response: Oh my goodness, I'm getting a bit worried now. How did you get this number, I've never shared my mob...
+2026-02-05 17:20:47,016 - INFO - 📤 RESPONSE DATA: {
+  "status": "success",
+  "reply": "Oh my goodness, I'm getting a bit worried now. How did you get this number, I've never shared my mobile number with anyone from the bank?"
+}
+2026-02-05 17:20:47,016 - INFO - 📊 SESSION STATUS - Session: test-local-123, Turn: 1, Persona: elderly
+2026-02-05 17:20:47,016 - INFO - 📊 ENTITIES ACCUMULATED - Banks: 1, UPIs: 0, Links: 0, Phones: 0
+2026-02-05 17:20:47,016 - INFO - ✅ Request processed successfully for session: test-local-123
+🎭 [AUTO-SELECT] Scam Type: UPFRAUD -> Selected Persona: elderly
+INFO:     127.0.0.1:53624 - "POST /honeypot HTTP/1.1" 200 OK
+2026-02-05 17:20:47,016 - INFO - 🔄 [BACKGROUND] Processing session test-local-123
+2026-02-05 17:20:47,021 - INFO - ✅ Conversation saved for session test-local-123
+2026-02-05 17:20:47,025 - INFO - ✅ Session state saved for session test-local-123
+2026-02-05 17:20:47,026 - INFO - ⏱️  [BACKGROUND] Started inactivity monitor for session test-local-123
+2026-02-05 17:20:47,026 - INFO - ⏱️  [MONITOR] Started inactivity monitor for session test-local-123 (timeout: 30s)
+2026-02-05 17:21:17,026 - INFO - ⏰ [MONITOR] Inactivity detected for session test-local-123 (inactive for 31.0s)
+2026-02-05 17:21:17,027 - INFO - 📞 [MONITOR] Sending GUVI callback for session test-local-123
+2026-02-05 17:21:17,205 - INFO - ✅ GUVI Callback sent: 200
+2026-02-05 17:21:17,211 - INFO - ✅ [MONITOR] Callback completed for session test-local-123

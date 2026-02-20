@@ -117,6 +117,7 @@ You need everything explained step by step.""",
         scammer_message: str,
         persona_type: str = "elderly",
         current_intel: Optional[Dict] = None,
+        last_response: str = "",
     ) -> Tuple[str, str]:
         """
         Generate an intelligent response as the persona.
@@ -126,6 +127,7 @@ You need everything explained step by step.""",
             scammer_message: The scammer's latest message
             persona_type: Which persona to use
             current_intel: Intel extracted so far (from extractor.py)
+            last_response: The previous response we gave (to avoid repetition)
 
         Returns:
             Tuple of (response_text, persona_type)
@@ -155,7 +157,7 @@ You need everything explained step by step.""",
         language_style = self._detect_language_style(scammer_message)
 
         # Build the intelligent agent prompt
-        system_prompt = self._build_system_prompt(persona, context, language_style)
+        system_prompt = self._build_system_prompt(persona, context, language_style, last_response)
         user_prompt = self._build_user_prompt(scammer_message, context, language_style)
 
         try:
@@ -315,7 +317,7 @@ You need everything explained step by step.""",
             return "english"
 
     def _build_system_prompt(
-        self, persona: Dict, context: Dict, language_style: str = "hinglish"
+        self, persona: Dict, context: Dict, language_style: str = "hinglish", last_response: str = ""
     ) -> str:
         """Build the system prompt that gives the agent full understanding"""
 
@@ -347,6 +349,14 @@ Write like an English-speaking Indian would."""
             language_instruction = """LANGUAGE:
 The scammer is using Hinglish. Respond in natural Hinglish (Roman script only, no Devanagari)."""
 
+        # CRITICAL: Don't repeat the last response
+        no_repeat_instruction = ""
+        if last_response:
+            no_repeat_instruction = f"""CRITICAL - NEVER REPEAT YOUR LAST RESPONSE:
+Your previous response was: "{last_response}"
+You MUST say something DIFFERENT this time. Do not use the same phrases or stalling tactics again.
+Think of a NEW way to stall or ask questions. Vary your language and approach."""
+
         return f"""You are a REAL PERSON being scammed.
 
 YOUR CHARACTER:
@@ -354,6 +364,8 @@ YOUR CHARACTER:
 
 HOW YOU EMOTIONALLY REACT:
 {emotional_triggers}
+
+{no_repeat_instruction}
 
 IMPORTANT: You are a VICTIM, not an investigator.
 - React FIRST with emotion: scared, worried, confused - like a real person would

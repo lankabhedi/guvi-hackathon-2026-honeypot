@@ -1,0 +1,17 @@
+INFO:     Started server process [27970]
+INFO:     Waiting for application startup.
+2026-02-20 18:48:16,042 - INFO - 🚀 Starting up Agentic Honey-Pot API...
+2026-02-20 18:48:16,042 - INFO - 📋 Python version: 3.13.7 (main, Jan 22 2026, 20:15:57) [GCC 15.2.0]
+2026-02-20 18:48:16,042 - INFO - 📋 Working directory: /home/samnitmehandiratta/honey-pot-api
+2026-02-20 18:48:16,042 - INFO - 📋 GROQ_API_KEY set: Yes
+2026-02-20 18:48:16,042 - INFO - 📋 API_KEY set: Yes
+2026-02-20 18:48:16,043 - INFO - ✅ Database initialized
+2026-02-20 18:48:16,043 - INFO - ✅ Startup complete - ready to receive requests
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:41018 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-02-20 18:48:25,770 - INFO - 🛑 Shutting down...
+INFO:     Application shutdown complete.
+INFO:     Finished server process [27970]

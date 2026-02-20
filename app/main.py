@@ -637,6 +637,10 @@ def track_conversation_metrics(
     
     session_info["conversation_metrics"] = metrics
     
+    # Track last response to avoid repetition
+    session_info["last_response"] = response_text
+    session_info["last_response_turn"] = session_info.get("message_count", 0)
+    
     logger.info(
         f"📊 CONVERSATION METRICS - Qs: {metrics['questions_asked']}, "
         f"Investigation: {metrics['investigative_questions']}, "
@@ -726,6 +730,10 @@ async def honeypot_endpoint(
                 "red_flags_identified": 0,
                 "elicitations_attempted": 0,
             }
+        
+        # Initialize last_response if not present
+        if "last_response" not in session_info:
+            session_info["last_response"] = ""
 
     else:
         # New session
@@ -757,6 +765,7 @@ async def honeypot_endpoint(
             "last_activity_ts": time.time(),
             "stale_turns": 0,
             "last_entity_count": 0,
+            "last_response": "",
         }
         session_data[session_id] = session_info
         logger.info(f"✨ Created new session: {session_id}")
@@ -883,6 +892,7 @@ async def honeypot_endpoint(
                 scammer_message,
                 active_persona,
                 session_info["extracted_entities"],
+                session_info.get("last_response", ""),
             ),
             timeout=8.0,  # 8 second timeout for response generation
         )
