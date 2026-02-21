@@ -35,8 +35,10 @@ URL_PATTERN = re.compile(r'https?://[^\s<>"{}|^`\[\]]+|www\.[^\s<>"{}|^`\[\]]+',
 AT_PATTERN = re.compile(r'\b[\w.\-]+@[\w.\-]+\b')  # Catches both UPI and email
 # Case ID requires 'case' keyword AND value must be at least 6 chars to avoid matching employee IDs
 CASE_ID_PATTERN = re.compile(r'(?i)(?:case[-\s]?(?:id|number|no\.?)[/:\s]+)([A-Z0-9/\-]{6,})')
-POLICY_PATTERN = re.compile(r'(?i)(?:policy[-\s#]?(?:no|number)?|pol)[/:\s]*([A-Z0-9/\-]+)')
-ORDER_PATTERN = re.compile(r'(?i)(?:order[-\s#]?(?:no|number|id)?|ord)[/:\s]*([A-Z0-9/\-]+)')
+# Policy requires 'policy' keyword + value must be at least 3 chars
+POLICY_PATTERN = re.compile(r'(?i)(?:policy[-\s#]?(?:no|number)?)[/:\s]+([A-Z0-9/\-]{3,})')
+# Order requires 'order' keyword + value must be at least 3 chars (prevent matching 'ord' in normal words)
+ORDER_PATTERN = re.compile(r'(?i)(?:order[-\s#]?(?:no|number|id)?)[/:\s]+([A-Z0-9/\-]{3,})')
 AMOUNT_PATTERN = re.compile(r'(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{2})?)', re.IGNORECASE)
 
 
