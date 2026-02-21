@@ -197,7 +197,7 @@ MIT License - Built for educational purposes and fraud prevention.
 
 ## Team
 
-**Team BinaryBonsai** 🏆 **10th Place | Score: 87**
+**Team BinaryBonsai** 🏆 **10th Place | Score: 87 | 6th by Unique Score**
 
 ![Leaderboard](assets/leaderboard.png)
 
