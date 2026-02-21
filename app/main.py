@@ -23,14 +23,14 @@ logger = logging.getLogger(__name__)
 
 # Global Constants
 INACTIVITY_TIMEOUT = (
-    12  # seconds - increased to allow GUVI time to reply (effective ~10s wait)
+    8  # seconds - GUVI waits only 10s after conversation ends, must fire before that
 )
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.detector import ScamDetector
 from app.persona import PersonaEngine
-from app.extractor import EntityExtractor
+from app.extractor import EntityExtractor, regex_extract, merge_extraction_results, classify_at_sign_match
 from app.profiler import ScammerProfiler
 from app.database import (
     init_db,
@@ -58,9 +58,23 @@ profiler = ScammerProfiler()
 session_data = {}
 
 
-def parse_guvi_message(raw_message: str) -> str:
+import re as _re
+
+def normalize_phone(phone: str) -> str:
+    """Normalize phone number to canonical format: +91XXXXXXXXXX"""
+    digits = _re.sub(r'[^\d]', '', phone)
+    # Remove leading 91 country code if present
+    if digits.startswith('91') and len(digits) == 12:
+        digits = digits[2:]
+    # Return canonical format
+    if len(digits) == 10 and digits[0] in '6789':
+        return f'+91-{digits}'
+    return phone  # Return as-is if not a standard Indian number
+
+
+def parse_guvi_message(raw_message: str) -> tuple:
     """
-    Extract the actual scammer message from GUVI's meta-wrapper format.
+    Extract the actual scammer message AND meta-wrapper entities from GUVI's format.
 
     GUVI sends messages in this format:
     "The user wants us to output only the scammer's message text.
@@ -69,24 +83,67 @@ def parse_guvi_message(raw_message: str) -> str:
     upiId: scammer.fraud@fakebank
     phoneNumber: +91-9876543210|<actual scammer message>"
 
-    We need to extract only the part after the pipe character.
+    Returns: (actual_message, meta_entities_dict)
     """
+    meta_entities = {
+        "bankAccounts": [],
+        "upiIds": [],
+        "phoneNumbers": [],
+        "emailAddresses": [],
+        "phishingLinks": [],
+    }
+
     if not raw_message:
-        return raw_message
+        return raw_message, meta_entities
 
     # Check if message contains the pipe delimiter
     if "|" in raw_message:
-        # Split on pipe and take everything after it
         parts = raw_message.split("|")
         if len(parts) > 1:
+            meta_part = parts[0]  # Everything before pipe
             actual_message = parts[-1].strip()
+
+            # Extract entities from meta-wrapper using key: value patterns
+            # bankAccount: 1234567890123456
+            bank_matches = _re.findall(r'bankAccount:\s*([\d]+)', meta_part)
+            for b in bank_matches:
+                if b not in meta_entities["bankAccounts"]:
+                    meta_entities["bankAccounts"].append(b)
+
+            # upiId: scammer.fraud@fakebank
+            upi_matches = _re.findall(r'upiId:\s*([\w.\-]+@[\w.\-]+)', meta_part)
+            for u in upi_matches:
+                # Classify UPI vs email
+                if classify_at_sign_match(u) == 'upi':
+                    if u not in meta_entities["upiIds"]:
+                        meta_entities["upiIds"].append(u)
+                else:
+                    if u not in meta_entities["emailAddresses"]:
+                        meta_entities["emailAddresses"].append(u)
+
+            # phoneNumber: +91-9876543210
+            phone_matches = _re.findall(r'phoneNumber:\s*([\+\d\-\s]+)', meta_part)
+            for p in phone_matches:
+                normalized = normalize_phone(p.strip())
+                if normalized not in meta_entities["phoneNumbers"]:
+                    meta_entities["phoneNumbers"].append(normalized)
+
+            # email: (if present)
+            email_matches = _re.findall(r'email:\s*([\w.\-]+@[\w.\-]+\.[a-zA-Z]{2,})', meta_part)
+            for e in email_matches:
+                if e not in meta_entities["emailAddresses"]:
+                    meta_entities["emailAddresses"].append(e)
+
             logger.info(
-                f"🔍 [GUVI PARSER] Extracted actual message: '{actual_message[:100]}...'"
+                f"🔍 [GUVI PARSER] Meta-wrapper entities: {meta_entities}"
             )
-            return actual_message
+            logger.info(
+                f"🔍 [GUVI PARSER] Actual message: '{actual_message[:100]}...'"
+            )
+            return actual_message, meta_entities
 
     # If no pipe found, return original message
-    return raw_message
+    return raw_message, meta_entities
 
 
 @asynccontextmanager
@@ -680,8 +737,8 @@ async def honeypot_endpoint(
     session_id = request.sessionId
     raw_scammer_message = request.message.text
 
-    # Parse GUVI meta-wrapper format to extract actual scammer message
-    scammer_message = parse_guvi_message(raw_scammer_message)
+    # Parse GUVI meta-wrapper format to extract actual scammer message AND meta entities
+    scammer_message, meta_entities = parse_guvi_message(raw_scammer_message)
 
     # Validate session_id
     if not session_id or not isinstance(session_id, str):
@@ -857,6 +914,39 @@ async def honeypot_endpoint(
     # PHASE 2: AI-Powered Entity Extraction
     # Entity extraction is now done in parallel with detection above
 
+    # ALSO: Run regex extraction on SCAMMER messages from conversation history (NOT our own replies)
+    if request.conversationHistory:
+        for hist_msg in request.conversationHistory:
+            sender = hist_msg.get("sender", "")
+            # Only extract from scammer messages, not our own replies
+            if sender != "user" and sender != "honeypot":
+                hist_text = hist_msg.get("text", "")
+                if hist_text:
+                    hist_regex = regex_extract(hist_text)
+                    extracted = merge_extraction_results(extracted, hist_regex)
+
+    # INJECT meta-wrapper entities (ground truth from GUVI)
+    for key in ["bankAccounts", "upiIds", "phoneNumbers", "emailAddresses", "phishingLinks"]:
+        for val in meta_entities.get(key, []):
+            if val:
+                existing = extracted.get(key, [])
+                if val not in existing:
+                    if key not in extracted:
+                        extracted[key] = []
+                    extracted[key].append(val)
+                    logger.info(f"📋 [META] Injected {key}: {val}")
+
+    # NORMALIZE phone numbers to prevent duplicates
+    if extracted.get("phoneNumbers"):
+        seen_phones = {}
+        normalized_phones = []
+        for phone in extracted["phoneNumbers"]:
+            canonical = normalize_phone(phone)
+            if canonical not in seen_phones:
+                seen_phones[canonical] = True
+                normalized_phones.append(canonical)
+        extracted["phoneNumbers"] = normalized_phones
+
     # Accumulate intelligence and update Hive Mind
     hive_mind_alert = None
 
@@ -946,14 +1036,17 @@ async def honeypot_endpoint(
         
     except Exception as e:
         logger.error(f"❌ Error generating persona response: {str(e)}")
-        import random
+        # Same turn-based rotation as timeout handler, with entity questions
+        turn = session_info.get("message_count", 1)
         fallback_generic = [
-            "Ek minute please, thoda confusion ho raha hai.",
-            "Ji, thoda time dijiye. Samajh nahi aa raha.",
-            "Arre, kya bol rahe ho? Dheere bataiye.",
-            "Sorry, network problem ho raha hai.",
+            "Ek minute please, thoda confusion ho raha hai. Aapka phone number kya hai?",
+            "Ji, thoda time dijiye. Samajh nahi aa raha. Aapka naam bataiye?",
+            "Arre, kya bol rahe ho? Dheere bataiye. Aapka UPI ID kya hai?",
+            "Sorry, network problem ho raha hai. Aapka employee ID bataiye?",
+            "Ji, main darr gayi. Aap konsi company se bol rahe ho? Phone number dijiye?",
+            "Beta, thoda samjhao. Office ka address kya hai? Phone number do?",
         ]
-        response_text = random.choice(fallback_generic)
+        response_text = fallback_generic[turn % len(fallback_generic)]
         persona_id = active_persona
 
     # Track conversation quality metrics
