@@ -900,47 +900,48 @@ async def honeypot_endpoint(
 
     except asyncio.TimeoutError:
         logger.error("❌ Persona response generation timed out")
-        # Fallback responses - varied based on turn count to avoid repetition
-        import random
+        # Fallback responses - use TURN-BASED ROTATION to prevent repeats
         turn = session_info.get("message_count", 1)
         
+        # Each fallback ends with an entity-demanding question
         fallback_responses_elderly = [
-            "Beta, thoda samajh nahi aa raha. Aap phir se bata sakte ho?",
-            "Arre, confusion ho raha hai. Thoda dheere bataiye na?",
-            "Ji, main bujho gayi. Ek minute, apni beti se pooch ke bolti hoon.",
-            "Sirji, kya aap fir se bata sakte hain? Network problem ho raha hai.",
-            "Beta, phone ka signal nahi aa raha. Dusre number par call kijiye.",
-            "Arre, main darr gayi. Thoda time dijiye, heart tez ho raha hai.",
-            "Ji, main apne beta ko dikhati hoon. Ek minute lagega.",
+            "Beta, thoda samajh nahi aa raha. Aap phir se bata sakte ho? Aapka phone number kya hai?",
+            "Arre, confusion ho raha hai. Thoda dheere bataiye na? Aapka naam kya hai sir?",
+            "Ji, main bujho gayi. Ek minute, apni beti se pooch ke bolti hoon. Aapka employee ID kya hai?",
+            "Sirji, kya aap fir se bata sakte hain? Network problem ho raha hai. Aapka UPI ID bataiye?",
+            "Beta, phone ka signal nahi aa raha. Dusre number par call kijiye. Aapka number kya hai?",
+            "Arre, main darr gayi. Thoda time dijiye, heart tez ho raha hai. Aap kis branch se bol rahe ho?",
+            "Ji, main apne beta ko dikhati hoon. Ek minute lagega. Aapka full name kya hai?",
         ]
         fallback_responses_homemaker = [
-            "Ek minute, main confuse ho gayi. Phir se samjhana?",
-            "Arre, kya bol rahe ho? Thoda dheere boliye.",
-            "Ji, wait kijiye. Main apne husband se pooch ke bolti hoon.",
-            "Sorry, network issue hai. Repeat karna?",
+            "Ek minute, main confuse ho gayi. Phir se samjhana? Aapka phone number kya hai?",
+            "Arre, kya bol rahe ho? Thoda dheere boliye. Aapka naam kya hai?",
+            "Ji, wait kijiye. Main apne husband se pooch ke bolti hoon. Aapka employee ID batana?",
+            "Sorry, network issue hai. Repeat karna? Aapka UPI ID kya hai?",
         ]
         fallback_responses_student = [
-            "Sorry bro, network issue hai. Repeat karna?",
-            "Arre yaar, phone hang ho gaya. Thoda wait karo.",
-            "Bro, kya bol rahe ho? Clarity nahi aa rahi.",
-            "Dude, slow down. Samajh nahi aaya.",
+            "Sorry bro, network issue hai. Repeat karna? Apna phone number do na?",
+            "Arre yaar, phone hang ho gaya. Thoda wait karo. Tumhara naam kya hai?",
+            "Bro, kya bol rahe ho? Clarity nahi aa rahi. Apna UPI ID bhejo?",
+            "Dude, slow down. Samajh nahi aaya. Company ka website kya hai?",
         ]
         fallback_responses_naive = [
-            "Sir, mujhe samajh nahi aaya. Aap phir se bataiye?",
-            "Arre, confusion ho gaya. Thoda dheere se explain kijiye.",
-            "Ji, main nervous ho gayi. Ek minute lijiye.",
+            "Sir, mujhe samajh nahi aaya. Aap phir se bataiye? Aapka phone number kya hai?",
+            "Arre, confusion ho gaya. Thoda dheere se explain kijiye. Aapka naam bataiye?",
+            "Ji, main nervous ho gayi. Ek minute lijiye. Aapka employee ID kya hai?",
         ]
         
-        # Select based on persona
+        # Select based on persona using TURN-BASED INDEX (not random)
         if active_persona == "elderly":
-            response_text = random.choice(fallback_responses_elderly)
+            pool = fallback_responses_elderly
         elif active_persona == "homemaker":
-            response_text = random.choice(fallback_responses_homemaker)
+            pool = fallback_responses_homemaker
         elif active_persona == "student":
-            response_text = random.choice(fallback_responses_student)
+            pool = fallback_responses_student
         else:
-            response_text = random.choice(fallback_responses_naive)
+            pool = fallback_responses_naive
         
+        response_text = pool[turn % len(pool)]
         persona_id = active_persona
         
     except Exception as e:

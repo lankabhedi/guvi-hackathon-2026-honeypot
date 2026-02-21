@@ -33,18 +33,30 @@ PHONE_PATTERN = re.compile(
 BANK_ACCOUNT_PATTERN = re.compile(r'(?<!\d)\d{9,18}(?!\d)')
 URL_PATTERN = re.compile(r'https?://[^\s<>"{}|^`\[\]]+|www\.[^\s<>"{}|^`\[\]]+', re.IGNORECASE)
 AT_PATTERN = re.compile(r'\b[\w.\-]+@[\w.\-]+\b')  # Catches both UPI and email
-CASE_ID_PATTERN = re.compile(r'(?i)(?:case[-\s]?(?:id|number|no)?|cv)[/:\s]*([A-Z0-9/\-]+)')
+# Case ID requires 'case' keyword AND value must be at least 6 chars to avoid matching employee IDs
+CASE_ID_PATTERN = re.compile(r'(?i)(?:case[-\s]?(?:id|number|no\.?)[/:\s]+)([A-Z0-9/\-]{6,})')
 POLICY_PATTERN = re.compile(r'(?i)(?:policy[-\s#]?(?:no|number)?|pol)[/:\s]*([A-Z0-9/\-]+)')
 ORDER_PATTERN = re.compile(r'(?i)(?:order[-\s#]?(?:no|number|id)?|ord)[/:\s]*([A-Z0-9/\-]+)')
 AMOUNT_PATTERN = re.compile(r'(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{2})?)', re.IGNORECASE)
+
+
+# Real TLDs — if domain ends with one of these, it's always an email
+REAL_TLDS = {
+    'com', 'in', 'org', 'net', 'co', 'io', 'edu', 'gov', 'info', 'biz',
+    'me', 'us', 'uk', 'ca', 'au', 'de', 'fr', 'jp', 'cn', 'ru', 'br',
+    'xyz', 'online', 'site', 'tech', 'app', 'dev', 'cloud',
+}
 
 
 def classify_at_sign_match(match: str) -> str:
     """
     Classify an @-containing string as either 'upi' or 'email'.
     
-    Rule: If the part after @ contains a dot → email. No dot → UPI ID.
-    Also checks against known UPI PSP handles.
+    Rules (in order):
+    1. If domain has a dot AND ends with a real TLD → ALWAYS email
+       (e.g., security@sbi.com → email, even though 'sbi' is a UPI handle)
+    2. If domain has a dot but NOT a real TLD → check UPI handles
+    3. If domain has NO dot → UPI ID
     """
     if '@' not in match:
         return 'unknown'
@@ -52,12 +64,17 @@ def classify_at_sign_match(match: str) -> str:
     _, domain = match.rsplit('@', 1)
     domain_lower = domain.lower()
     
-    # If domain has a dot, it's an email (e.g., user@gmail.com)
+    # If domain has a dot
     if '.' in domain:
-        # But check if it could be a UPI deep link (e.g., user@okaxis.com is still UPI-ish)
-        base_domain = domain_lower.split('.')[0]
-        if base_domain in KNOWN_UPI_HANDLES:
-            return 'upi'
+        # Get the TLD (last part after dot)
+        tld = domain_lower.rsplit('.', 1)[-1]
+        
+        # If it ends with a real TLD, it's ALWAYS an email
+        # This catches security@sbi.com, admin@icici.in, etc.
+        if tld in REAL_TLDS:
+            return 'email'
+        
+        # Non-standard TLD with dot — still likely email
         return 'email'
     
     # No dot in domain — it's a UPI ID (e.g., scammer@fakebank)
@@ -115,7 +132,10 @@ def regex_extract(text: str) -> Dict[str, Any]:
     phone_digits = set(re.sub(r'[^\d]', '', p) for p in result["phoneNumbers"])
     result["bankAccounts"] = [
         b for b in bank_matches 
-        if b not in phone_digits and len(b) >= 9
+        if b not in phone_digits 
+        and len(b) >= 9
+        # Exclude 10-digit numbers starting with 6-9 (these are phone numbers)
+        and not (len(b) == 10 and b[0] in '6789')
     ]
     
     # 5. Case IDs

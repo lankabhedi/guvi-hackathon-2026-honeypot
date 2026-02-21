@@ -609,10 +609,23 @@ Your response:"""
         # Clean up extra whitespace
         response = re.sub(r"\s+", " ", response).strip()
 
-        # Remove AI disclaimers
-        disclaimers = ["as an ai", "i'm an ai", "i cannot", "i can't help with"]
+        # Remove AI disclaimers and refusals
+        disclaimers = [
+            "as an ai", "i'm an ai", "im an ai", "i am an ai",
+            "i cannot", "i can't help", "i cant help",
+            "i'm not able to", "im not able to",
+            "i'm sorry, but i can", "im sorry, but i can",
+            "i'm unable to", "im unable to",
+            "as a language model", "as an assistant",
+            "i don't have the ability", "i dont have the ability",
+            "i'm here to help", "im here to help",
+            "i can't assist", "i cant assist",
+            "i'm not comfortable", "im not comfortable",
+            "i cannot provide", "i can't provide", "i cant provide",
+        ]
+        response_lower = response.lower()
         for d in disclaimers:
-            if d in response.lower():
+            if d in response_lower:
                 return ""
 
         # Validate response makes sense
