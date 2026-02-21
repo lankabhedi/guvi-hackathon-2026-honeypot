@@ -950,29 +950,27 @@ async def honeypot_endpoint(
     # Accumulate intelligence and update Hive Mind
     hive_mind_alert = None
 
-    for key in ["bankAccounts", "upiIds", "phishingLinks", "phoneNumbers"]:
+    for key in ["bankAccounts", "upiIds", "phishingLinks", "phoneNumbers",
+                "emailAddresses", "caseIds", "policyNumbers", "orderNumbers"]:
         for value in extracted.get(key, []):
             if value:
-                # Update global DB
-                update_hive_mind(value, key)
+                # Update global DB (only for main entity types)
+                if key in ["bankAccounts", "upiIds", "phishingLinks", "phoneNumbers"]:
+                    update_hive_mind(value, key)
 
-                # Check if we've seen this before (and it's not just from this session)
-                # We check only if it's NEW to this session to avoid repeated alerts
+                # Check if we've seen this before (only for hive-trackable types)
+                if key not in session_info["extracted_entities"]:
+                    session_info["extracted_entities"][key] = []
                 if value not in session_info["extracted_entities"][key]:
-                    match = check_hive_mind(value, key)
-                    if match["found"] and match["sighting_count"] > 1:
-                        hive_mind_alert = {
-                            "value": value,
-                            "type": key,
-                            "sighting_count": match["sighting_count"],
-                        }
-
+                    if key in ["bankAccounts", "upiIds", "phishingLinks", "phoneNumbers"]:
+                        match = check_hive_mind(value, key)
+                        if match["found"] and match["sighting_count"] > 1:
+                            hive_mind_alert = {
+                                "value": value,
+                                "type": key,
+                                "sighting_count": match["sighting_count"],
+                            }
                     session_info["extracted_entities"][key].append(value)
-
-    # Handle amounts separately (no hive mind needed)
-    for value in extracted.get("amounts", []):
-        if value and value not in session_info["extracted_entities"]["amounts"]:
-            session_info["extracted_entities"]["amounts"].append(value)
 
     # PHASE 3: Generate Persona Response using the intelligent agent
     try:

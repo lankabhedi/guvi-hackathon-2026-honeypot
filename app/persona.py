@@ -31,6 +31,7 @@ class PersonaAgent:
         self._client = None
         self.model = "openai/gpt-oss-120b"  # Using OpenAI GPT OSS 120B model
         self.session_manager = SessionManager()
+        self._fallback_counter = 0
 
         # Rich persona definitions - focus on personality and situation, not physical traits
         self.personas = {
@@ -171,7 +172,7 @@ You need everything explained step by step.""",
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=1,
-                max_tokens=8192,  # Changed from max_completion_tokens for compatibility
+                max_tokens=300,  # Short responses are faster and more natural for the persona
                 top_p=1,
             )
 
@@ -813,14 +814,45 @@ Your response:"""
         return True
 
     def _fallback_response(self, persona_type: str) -> str:
-        """Fallback responses when LLM fails"""
-        fallbacks = {
-            "elderly": "Beta, thoda ruko, phone mein kuch problem aa rahi hai.",
-            "homemaker": "Ek minute, koi door pe aaya hai.",
-            "student": "Bro hold on, roommate bula raha hai.",
-            "naive_girl": "Sir ek second, mujhe samajh nahi aa raha.",
+        """Fallback responses when LLM fails — turn-based rotation with entity-demanding questions"""
+        # Use session turn count for rotation if available, otherwise use a class counter
+        if not hasattr(self, '_fallback_counter'):
+            self._fallback_counter = 0
+        self._fallback_counter += 1
+        turn = self._fallback_counter
+        
+        fallback_pools = {
+            "elderly": [
+                "Beta, thoda samajh nahi aa raha. Aap phir se bata sakte ho? Aapka phone number kya hai?",
+                "Arre, confusion ho raha hai. Thoda dheere bataiye na? Aapka naam kya hai sir?",
+                "Ji, main bujho gayi. Ek minute, apni beti se pooch ke bolti hoon. Aapka employee ID kya hai?",
+                "Sirji, kya aap fir se bata sakte hain? Network problem ho raha hai. Aapka UPI ID bataiye?",
+                "Beta, phone ka signal nahi aa raha. Dusre number par call kijiye. Aapka number kya hai?",
+                "Arre, main darr gayi. Thoda time dijiye. Aap kis branch se bol rahe ho?",
+                "Ji, main apne beta ko dikhati hoon. Ek minute lagega. Aapka full name kya hai?",
+            ],
+            "homemaker": [
+                "Ek minute, main confuse ho gayi. Phir se samjhana? Aapka phone number kya hai?",
+                "Arre, kya bol rahe ho? Thoda dheere boliye. Aapka naam kya hai?",
+                "Ji, wait kijiye. Main apne husband se pooch ke bolti hoon. Aapka employee ID batana?",
+                "Sorry, network issue hai. Repeat karna? Aapka UPI ID kya hai?",
+                "Koi door pe aaya hai, ek second. Aapka office address kya hai?",
+            ],
+            "student": [
+                "Sorry bro, network issue hai. Repeat karna? Apna phone number do na?",
+                "Arre yaar, phone hang ho gaya. Thoda wait karo. Tumhara naam kya hai?",
+                "Bro, kya bol rahe ho? Clarity nahi aa rahi. Apna UPI ID bhejo?",
+                "Dude, slow down. Samajh nahi aaya. Company ka website kya hai?",
+            ],
+            "naive_girl": [
+                "Sir ek second, mujhe samajh nahi aa raha. Aapka phone number kya hai?",
+                "Sir, main nervous ho gayi. Aapka naam bataiye?",
+                "Ek minute sir, confusion ho raha hai. Aapka employee ID kya hai?",
+            ],
         }
-        return fallbacks.get(persona_type, "Ek minute please.")
+        
+        pool = fallback_pools.get(persona_type, fallback_pools["elderly"])
+        return pool[turn % len(pool)]
 
     def reset_session(self, session_id: str):
         """Reset a session (for testing)"""
