@@ -197,5 +197,7 @@ MIT License - Built for educational purposes and fraud prevention.
 
 ## Team
 
+**Team BinaryBonsai** 🏆 **10th Place | Score: 87**
+
 Built for India AI Impact Buildathon 2026
 Problem Statement 2: Agentic Honey-Pot for Scam Detection & Intelligence Extraction
