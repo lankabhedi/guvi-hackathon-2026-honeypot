@@ -845,6 +845,11 @@ async def honeypot_endpoint(
         logger.info(
             f"🔍 Scam detection: is_scam={is_scam}, confidence={confidence:.2f}"
         )
+        # Ensure minimum confidence when scam detected with keywords
+        if is_scam and confidence < 0.85 and scam_analysis.get("tactics"):
+            scam_analysis["confidence"] = 0.85
+            confidence = 0.85
+            logger.info(f"📊 Boosted confidence to 0.85 (keywords found)")
 
     except asyncio.TimeoutError:
         logger.error("❌ AI operations timed out")
@@ -954,6 +959,10 @@ async def honeypot_endpoint(
                 "emailAddresses", "caseIds", "policyNumbers", "orderNumbers"]:
         for value in extracted.get(key, []):
             if value:
+                # Filter: skip short caseIds (employee IDs from LLM)
+                if key == "caseIds" and len(str(value)) < 6:
+                    logger.info(f"🚫 Skipping short caseId: {value} (likely employee ID)")
+                    continue
                 # Update global DB (only for main entity types)
                 if key in ["bankAccounts", "upiIds", "phishingLinks", "phoneNumbers"]:
                     update_hive_mind(value, key)
