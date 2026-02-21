@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Global Constants
 INACTIVITY_TIMEOUT = (
-    8  # seconds - GUVI waits only 10s after conversation ends, must fire before that
+    30  # seconds - GUVI takes ~10s between messages, must wait for full conversation
 )
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
