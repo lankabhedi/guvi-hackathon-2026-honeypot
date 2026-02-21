@@ -6,3 +6,15 @@ venv/
 honey-pot-api/
 callback_backup_*.json
 honeypot.db
+
+# Logs
+*.log
+
+# Debug/test scripts
+debug_*.py
+stable_*.py
+stable_comparison/
+
+# Documentation PDFs (keep in Google Drive, not in repo)
+*.pdf
+
